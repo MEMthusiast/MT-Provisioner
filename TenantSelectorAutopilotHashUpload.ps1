@@ -41,15 +41,15 @@ $AppId = ""
 
 $Tenants = @(
     @{
-        Name = "Customer 1"
+        Name = "Tenant 1"
         TenantId = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
     },
     @{
-        Name = "Customer 2"
+        Name = "Tenant 2"
         TenantId = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
     },
     @{
-        Name = "Customer 3"
+        Name = "Tenant 3"
         TenantId = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
     }
 )
