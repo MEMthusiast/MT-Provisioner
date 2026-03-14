@@ -3,7 +3,7 @@
     Start-Transcript -Path (Join-Path "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\OSD\" $Global:Transcript) -ErrorAction Ignore
 
 #region cleanup OSDCloud
-    Write-Host "Execute OSD Cloud Cleanup Script" -ForegroundColor Green
+    Write-Host "Execute OSD Cloud Cleanup Script"
 
     # Copying the OOBEDeploy and AutopilotOOBE Logs
     Get-ChildItem 'C:\Windows\Temp' -Filter *OOBE* | Copy-Item -Destination 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\OSD' -Force
@@ -34,14 +34,14 @@
 #endregion cleanup OSDCloud
 
 #region Enable WIndows Product Key
-    Write-Host "Enable OEM Product Key" -ForegroundColor Green
+    Write-Host "Enable OEM Product Key"
 
     $(Get-WmiObject SoftwareLicensingService).OA3xOriginalProductKey | foreach{ if ( $null -ne $_ ) { Write-Host "Installing"$_;changepk.exe /Productkey $_ } else { Write-Host "No key present" } }
 
 #endregion Enable WIndows Product Key
 
 #region Enable BitLocker
-    Write-Host "Enable BitLocker" -ForegroundColor Green
+    Write-Host "Enable BitLocker"
 
     # Get driveletters from Internaldrives
     $disks = Get-Disk | Where-Object -FilterScript {$_.Bustype -ne "USB"}
