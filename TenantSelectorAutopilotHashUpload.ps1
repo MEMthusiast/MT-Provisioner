@@ -17,7 +17,7 @@
     Optional. Indicates whether to upload the device to Autopilot. Default is $false.
 .NOTES
     File Name: TenantSelectorAutopilotHashUpload.ps1
-    Author: Nick Alles
+    Author: https://github.com/MEMthusiast
     Based on:
     https://github.com/blawalt/WinPEAP
     Mike Mdm's approach (https://mikemdm.de/2023/01/29/can-you-create-a-autopilot-hash-from-winpe-yes/)
