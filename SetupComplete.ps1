@@ -1,7 +1,8 @@
-#region cleanup OSDCloud
+# Transcript log file name with timestamp
     $Global:Transcript = "$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-StartupComplete-Script.log"
     Start-Transcript -Path (Join-Path "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\OSD\" $Global:Transcript) -ErrorAction Ignore
 
+#region cleanup OSDCloud
     Write-Host "Execute OSD Cloud Cleanup Script" -ForegroundColor Green
 
     # Copying the OOBEDeploy and AutopilotOOBE Logs
@@ -33,12 +34,14 @@
 #endregion cleanup OSDCloud
 
 #region Enable WIndows Product Key
+    Write-Host "Enable OEM Product Key" -ForegroundColor Green
 
     $(Get-WmiObject SoftwareLicensingService).OA3xOriginalProductKey | foreach{ if ( $null -ne $_ ) { Write-Host "Installing"$_;changepk.exe /Productkey $_ } else { Write-Host "No key present" } }
 
 #endregion Enable WIndows Product Key
 
 #region Enable BitLocker
+    Write-Host "Enable BitLocker" -ForegroundColor Green
 
     # Get driveletters from Internaldrives
     $disks = Get-Disk | Where-Object -FilterScript {$_.Bustype -ne "USB"}
@@ -59,7 +62,7 @@
     $TPM = Get-TPM
 
     If ($TPM.TpmPresent -like "False"){
-            Write-Log -Message "No TPM-chip detected"
+            Write-Host -Message "No TPM-chip detected"
             Exit 1
         }
 
@@ -79,7 +82,7 @@
                     Clear-BitLockerAutoUnlock
                     Disable-Bitlocker -MountPoint $DriveLetter
                 }
-                catch{write-Log -Message "Error disabling bitlocker"}
+                catch{Write-Host -Message "Error disabling bitlocker"}
             }
             
             #wait until decryption is complete
@@ -91,18 +94,18 @@
                     $DecryptionComplete = $true
                 }
                 #view process in log
-                write-Log -Message "DecryptionPercentage $($BitlockerStatus.EncryptionPercentage)"
+                Write-Host -Message "DecryptionPercentage $($BitlockerStatus.EncryptionPercentage)"
             }
             
             #Add TPM chip for autounlock OS-disk
             if ($BitlockerStatus.VolumeType -eq "OperatingSystem"){
                 try {Add-BitLockerKeyProtector -MountPoint $DriveLetter -TpmProtector}
-                catch {Write-Log -Message "Error TPM add to OperatingSystem drive"}
+                catch {Write-Host -Message "Error TPM add to OperatingSystem drive"}
             }
 
             #Encrypt disk
             try {Enable-Bitlocker -MountPoint $DriveLetter -SkipHardwareTest -RecoveryPasswordProtector}
-            catch {Write-Log -Message "Error enabling bitlocker"}
+            catch {Write-Host -Message "Error enabling bitlocker"}
 
             #wait until encryption status 100%
             $encryptionComplete = $false
@@ -113,31 +116,31 @@
                     $encryptionComplete = $true
                 }
                 #view process in log
-                Write-Log -Message "EncryptionPercentage $($BitlockerStatus.EncryptionPercentage)"
+                Write-Host -Message "EncryptionPercentage $($BitlockerStatus.EncryptionPercentage)"
             }
             
             #backup bitlocker key to Microsoft
             if ($BitlockerStatus.VolumeType -eq "OperatingSystem"){
                 try {BackupToAAD-BitLockerKeyProtector -MountPoint $DriveLetter -KeyProtectorId $BitlockerStatus.KeyProtector[1].KeyProtectorId}
-                catch {Write-Log -Message "Error backup bitlocker key to Microsoft"}
+                catch {Write-Host -Message "Error backup bitlocker key to Microsoft"}
             }
             else {
                 try {BackupToAAD-BitLockerKeyProtector -MountPoint $DriveLetter -KeyProtectorId $BitlockerStatus.KeyProtector[0].KeyProtectorId}
-                catch {Write-Log -Message "Error backup bitlocker key to Microsoft"}
+                catch {Write-Host -Message "Error backup bitlocker key to Microsoft"}
             }
             
             #resume and enable bitlocker
             try {Resume-BitLocker -MountPoint $DriveLetter}
-            catch {Write-Log -Message "error resuming bitlocker"}
+            catch {Write-Host -Message "error resuming bitlocker"}
                 
             #autounlock bitlocker Data-drives
             If ($BitlockerStatus.VolumeType -ne "OperatingSystem")  {
                 try {Enable-BitLockerAutoUnlock -MountPoint $DriveLetter}
-                catch {Write-Log -Message "Error autounlock"}
+                catch {Write-Host -Message "Error autounlock"}
             }
         }
         Else  {
-            Write-Log -Message "Bitlocker already enabled $($DriveLetter)"
+            Write-Host -Message "Bitlocker already enabled $($DriveLetter)"
         }
     }
 
