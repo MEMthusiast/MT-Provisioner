@@ -2,7 +2,53 @@
     $Global:Transcript = "$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-StartupComplete-Script.log"
     Start-Transcript -Path (Join-Path "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\OSD\" $Global:Transcript) -ErrorAction Ignore
 
+#region Create WPF Window
+Add-Type -AssemblyName PresentationFramework
+
+    [xml]$xaml = @"
+    <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="Device Setup"
+        Height="160"
+        Width="420"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Topmost="True">
+    <Grid Margin="20">
+        <StackPanel>
+            <TextBlock Name="StatusText"
+                       Text="Preparing system..."
+                       FontSize="14"
+                       Margin="0,0,0,10"/>
+            <ProgressBar Name="ProgressBar"
+                         Height="22"
+                         Minimum="0"
+                         Maximum="100"/>
+        </StackPanel>
+    </Grid>
+    </Window>
+"@
+    $reader = New-Object System.Xml.XmlNodeReader $xaml
+    $window = [Windows.Markup.XamlReader]::Load($reader)
+
+    $ProgressBar = $window.FindName("ProgressBar")
+    $StatusText = $window.FindName("StatusText")
+
+    $window.Show()
+
+    function Set-Progress {
+        param(
+            [string]$Text,
+            [int]$Percent
+        )
+
+        $StatusText.Text = $Text
+        $ProgressBar.Value = $Percent
+        $window.Dispatcher.Invoke([action]{}, "Background")
+    }
+#endregion Create WPF Window
+
 #region cleanup OSDCloud
+    Set-Progress "Cleaning up OSDCloud files..." 20
     Write-Host "Execute OSD Cloud Cleanup Script"
 
     # Copying the OOBEDeploy and AutopilotOOBE Logs
@@ -34,6 +80,7 @@
 #endregion cleanup OSDCloud
 
 #region Enable WIndows Product Key
+    Set-Progress "Enabling Windows Product Key..." 40
     Write-Host "Enable OEM Product Key"
 
     $(Get-WmiObject SoftwareLicensingService).OA3xOriginalProductKey | foreach{ if ( $null -ne $_ ) { Write-Host "Installing"$_;changepk.exe /Productkey $_ } else { Write-Host "No key present" } }
@@ -41,6 +88,7 @@
 #endregion Enable WIndows Product Key
 
 #region Enable BitLocker
+    Set-Progress "Enabling BitLocker..." 60
     Write-Host "Enable BitLocker"
 
     # Get driveletters from Internaldrives
@@ -147,5 +195,8 @@
     Start-Process -FilePath "C:\Program Files (x86)\Microsoft Intune Management Extension\Microsoft.Management.Services.IntuneWindowsAgent.exe" -ArgumentList "intunemanagementextension://synccompliance"
 
 #endregion Enable Bitlocker
+
+Set-Progress "Finalizing setup..." 100
+$window.Close()
 
 Stop-Transcript
