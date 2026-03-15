@@ -125,43 +125,76 @@ $ParametersUrl = ""
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Tenant Selector"
-    $form.Size = "400,200"
+    $form.Size = "450,250"
     $form.StartPosition = "CenterScreen"
     $form.ControlBox = $false
 
-    $dropdown = New-Object System.Windows.Forms.ComboBox
-    $dropdown.Location = "40,40"
-    $dropdown.Size = "300,30"
-    $dropdown.DropDownStyle = "DropDownList"
+    # Search TextBox
+    $searchBox = New-Object System.Windows.Forms.TextBox
+    $searchBox.Location = "40,20"
+    $searchBox.Size = "350,25"
+    $form.Controls.Add($searchBox)
 
-    # Convert all tenants to PSCustomObjects first
+    # Dropdown ComboBox
+    $dropdown = New-Object System.Windows.Forms.ComboBox
+    $dropdown.Location = "40,60"
+    $dropdown.Size = "350,30"
+    $dropdown.DropDownStyle = "DropDownList"
+    $form.Controls.Add($dropdown)
+
+    # Convert all tenants to PSCustomObjects
     $TenantObjects = $Tenants | ForEach-Object {
         if ($_ -is [hashtable]) {
             [PSCustomObject]@{
                 Name     = $_.Name
-                TenantId = $_.TenantId    
+                TenantId = $_.TenantId
             }
         } else {
-            $_  # already PSCustomObject from JSON
+            $_
         }
     }
 
-    # Sort PSCustomObjects alphabetically by Name
+    # Sort alphabetically
     $SortedTenants = $TenantObjects | Sort-Object Name
 
-    # Add sorted tenant objects to dropdown
-    foreach ($tenant in $SortedTenants) {
+    # Clone for search filtering
+    $AllTenants = $SortedTenants.Clone()
+
+    # Populate dropdown initially with all tenants
+    foreach ($tenant in $AllTenants) {
         [void]$dropdown.Items.Add($tenant)
     }
 
-    # Display tenant name in dropdown
+    # Display tenant names
     $dropdown.DisplayMember = "Name"
 
-    $form.Controls.Add($dropdown)
+    # Search box filtering logic
+    $searchBox.Add_TextChanged({
+        $filter = $searchBox.Text.Trim().ToLower()
+        $dropdown.Items.Clear()
 
+        # Filter tenants
+        $filtered = if ([string]::IsNullOrWhiteSpace($filter)) {
+            $AllTenants
+        } else {
+            $AllTenants | Where-Object { $_.Name.ToLower() -like "*$filter*" }
+        }
+
+        # Add filtered items
+        foreach ($tenant in $filtered) {
+            [void]$dropdown.Items.Add($tenant)
+        }
+
+        # Select first item if available
+        if ($dropdown.Items.Count -gt 0) { 
+            $dropdown.SelectedIndex = 0 
+        }
+    })
+
+    # Start button
     $button = New-Object System.Windows.Forms.Button
     $button.Text = "Start"
-    $button.Location = "150,90"
+    $button.Location = "150,120"
     $form.Controls.Add($button)
 
     $button.Add_Click({
@@ -172,13 +205,14 @@ $ParametersUrl = ""
 
         $SelectedTenant = $dropdown.SelectedItem
 
-        # Only set tenant-related variables
+        # Set only tenant-related variables
         $script:TenantId   = $SelectedTenant.TenantId
         $script:TenantName = $SelectedTenant.Name
 
         $form.Close()
     })
 
+    # Show the form
     $form.ShowDialog()
 
     Write-Host "Selected customer: $TenantName" -ForegroundColor Green
