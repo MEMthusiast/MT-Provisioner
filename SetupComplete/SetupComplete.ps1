@@ -6,10 +6,10 @@
     It is designed to be executed before the OOBE phase of Windows setup, and performs several post-deployment configuration tasks to ensure the device is properly set up and secured before the user starts using it.
  
     It performs the following functions:
-        1. Cleans up OSDCloud leftovers and copies all logs to the Intune Management Extension log folder for easier troubleshooting.
-        2. Enables the OEM Product Key if available.
-        3. Enables BitLocker on all internal drives with TPM and XTS-AES 256 encryption.
-        4. Downloads CMTrace to the system for easy log viewing.
+        1. Downloads CMTrace to the system for easy log viewing. 
+        2. Cleans up OSDCloud leftovers and copies all logs to the Intune Management Extension log folder for easier troubleshooting.
+        3. Enables the OEM Product Key if available.
+        4. Enables BitLocker on all internal drives with TPM and XTS-AES 256 encryption.
 .NOTES
     File Name: SetupComplete.ps1
     Author: https://github.com/MEMthusiast
@@ -19,6 +19,39 @@
 
     $Global:Transcript = "$((Get-Date).ToString('yyyy-MM-dd-HHmmss'))-StartupComplete-Script.log"
     Start-Transcript -Path (Join-Path "$env:ProgramData\Microsoft\IntuneManagementExtension\Logs\OSD\" $Global:Transcript) -ErrorAction Ignore
+
+#region Download CMTrace
+
+    Write-Host "Downloading CMTrace..."
+
+    $Url               = "https://github.com/MEMthusiast/Intune-Autopilot-MultiTenant/raw/refs/heads/main/cmtrace.exe"
+    $DestinationFolder = "C:\Windows\System32"
+
+    try {
+        # Ensure TLS 1.2+
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+        # Extract filename and construct destination path
+        $FileName        = Split-Path -Path $Url -Leaf
+        $DestinationFile = Join-Path -Path $DestinationFolder -ChildPath $FileName
+
+        # Download only if file doesn't already exist
+        if (-not (Test-Path -Path $DestinationFile)) {
+
+            Invoke-WebRequest -Uri $Url -OutFile $DestinationFile -UseBasicParsing -ErrorAction Stop
+
+            Write-Host "CMTrace downloaded successfully to $DestinationFile"
+        }
+        else {
+            Write-Host "CMTrace already exists at $DestinationFile"
+        }
+
+    }
+    catch {
+        Write-Error "Failed to download CMTrace: $($_.Exception.Message)"
+    }
+
+#endregion Download CMTrace
 
 #region cleanup OSDCloud
 
@@ -245,38 +278,5 @@
     }
         
 #endregion Enable Bitlocker
-
-#region Download CMTrace
-
-    Write-Host "Downloading CMTrace..."
-
-    $Url               = "https://github.com/MEMthusiast/Intune-Autopilot-MultiTenant/raw/refs/heads/main/cmtrace.exe"
-    $DestinationFolder = "C:\Windows\System32"
-
-    try {
-        # Ensure TLS 1.2+
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-        # Extract filename and construct destination path
-        $FileName        = Split-Path -Path $Url -Leaf
-        $DestinationFile = Join-Path -Path $DestinationFolder -ChildPath $FileName
-
-        # Download only if file doesn't already exist
-        if (-not (Test-Path -Path $DestinationFile)) {
-
-            Invoke-WebRequest -Uri $Url -OutFile $DestinationFile -UseBasicParsing -ErrorAction Stop
-
-            Write-Host "CMTrace downloaded successfully to $DestinationFile"
-        }
-        else {
-            Write-Host "CMTrace already exists at $DestinationFile"
-        }
-
-    }
-    catch {
-        Write-Error "Failed to download CMTrace: $($_.Exception.Message)"
-    }
-
-#endregion Download CMTrace
 
 Stop-Transcript
