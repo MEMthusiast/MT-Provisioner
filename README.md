@@ -14,6 +14,3 @@ Autopilot logic used in this tool and OSDCloud USB creation based on: https://gi
 
 # Install OSDCloud
 
-## POC
-
-![](Video/OSDCloudMultiTenant.gif)
