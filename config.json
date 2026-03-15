@@ -1,0 +1,16 @@
+{
+  "Tenants": [
+    {
+      "Name": "Tenant 1",
+      "TenantId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+    },
+    {
+      "Name": "Tenant 2",
+      "TenantId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+    },
+    {
+      "Name": "Tenant 3",
+      "TenantId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+    }
+  ]
+}
