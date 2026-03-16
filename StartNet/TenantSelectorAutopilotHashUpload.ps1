@@ -1,7 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Collects hardware hash in WinPE and uploads it to Intune Autopilot of the selected tenant.
-    And downloads the SetupComplete.ps1 script to WINPE so it can later on be picked up by OSDCloud and executed before the OOBE phase.
+    Collects hardware hash in WinPE and uploads it to Intune Autopilot of the selected tenant. Optionally run a script before OOBE.
 .DESCRIPTION
     This script is designed for MSPs and to be run in combination with OSDCloud in a WinPE environment during the deployment of a Windows device.
     The Graph authentication logic is based on a multi-tenant app registration in Entra ID, allowing the same App ID and App Secret to be used across all tenants.
@@ -20,7 +19,7 @@
     Optional. Indicates whether to upload the device to Autopilot. Default is $false.
 .PARAMETER AppSecret
     Conditionally required. The app secret for authentication to you multitenant enterprise app.
-    - Required if Key Vault retrieval (`$KeyVault`) is disabled ($KeyVault = $false).  
+    - Required if Key Vault retrieval is disabled ($KeyVault = $false).  
     - Optional if Key Vault retrieval is enabled ($KeyVault = $true), because the secret will be retrieved from the Key Vault.
 .PARAMETER AppId
     Required. The app registration ID for authentication.
