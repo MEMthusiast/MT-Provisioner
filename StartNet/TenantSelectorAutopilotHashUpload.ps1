@@ -3,120 +3,122 @@
     Collects hardware hash in WinPE and uploads it to Intune Autopilot of the selected tenant. Optionally run a script before OOBE.
 .DESCRIPTION
     This script is designed for MSPs and to be run in combination with OSDCloud in a WinPE environment during the deployment of a Windows device.
-    The Graph authentication logic is based on a multi-tenant app registration in Entra ID, allowing the same App ID and App Secret to be used across all tenants.
-    
+    The Graph authentication logic is based on a multi-tenant app registration in Entra ID, allowing the same App ID and App Secret to be used across all tenants.    
     It performs the following functions:
         1. Displays a tenant selection UI for the user to choose which tenant to upload the hardware hash to.
         2. Collects the hardware hash using OA3Tool, including TPM information by registering the PCPKsp.dll.
         3. Uploads the hardware hash to the selected tenant's Intune Autopilot via Microsoft Graph API.
         4. Waits for the Autopilot profile assignment to complete.
         5. Optionally downloads a SetupComplete.ps1 script and saves it to the appropriate location in the WinPE environment where it later will be copied to be executed before OOBE.
-        6. Optionally downloads tenant configuration from a JSON file at runtime, allowing for dynamic configuration without modifying the script.
-        7. Supports retrieving the multitenant enterprise app secret from Azure Key Vault for enhanced security.
+        6. Optionally downloads a tenant configuration JSON file, allowing for dynamic configuration without modifying the script.
+        7. Supports retrieving the multitenant enterprise app secret from Azure Key Vault for enhanced security when allowing the keyvault to only be accessed from a trusted public IP address.
 .PARAMETER GroupTag
-    Required. The Autopilot group tag for all tenants to assign to the device.
+    Required. The Autopilot group tag for the device.
 .PARAMETER UploadToAutopilot
     Optional. Indicates whether to upload the device to Autopilot. Default is $false.
-.PARAMETER AppSecret
-    Conditionally required. The app secret for authentication to you multitenant enterprise app.
-    - Required if Key Vault retrieval is disabled ($KeyVault = $false).  
-    - Optional if Key Vault retrieval is enabled ($KeyVault = $true), because the secret will be retrieved from the Key Vault.
 .PARAMETER AppId
-    Required. The app registration ID for authentication.
-.PARAMETER Name
-    Specifies the tenant name to display in the tenant selection UI. You can choose here for injected parameters or hardcoded parameters.
-    If using hardcoded parameters, the tenant names will be defined in the script go to #region hardcoded parameters    
-    If using injected parameters, the tenant names will be read from the config file.
-.PARAMETER TenantId
-    Specifies the Entra ID tenant ID for each tenant to upload the hardware hash to. You can choose here for injected parameters or hardcoded parameters.
-    If using hardcoded parameters, the tenant IDs will be defined in the script go to #region hardcoded parameters
-    If using injected parameters, the tenant IDs will be read from the config file.
-.PARAMETER SetupCompleteUrl
-    Optional. URL to download a SetupComplete.ps1 script. This script will be copied to the WinPE image and will run during the SetupComplete phase before OOBE.
-    If not provided, the script will skip downloading. The default URL points to a sample SetupComplete.ps1 in this repository.
-.PARAMETER ParametersUrl
-    Optional. If provided, the script will read tenant information from the downloaded JSON instead of using hardcoded parameters.
+    Required. The app registration ID for authentication. This is the AppID of the multitenant Entra ID enterprise app.
 .PARAMETER KeyVault
-    Optional. Indicates whether to retrieve the $AppSecret from an Azure Key Vault.
-    - If set to $true, `$VaultName`,`$SecretName`, `$SPNAppID`, `$SPNSecret` and `$SPNTenantID` must be set and `$AppSecret` at the top is optional.  
-    - If set to $false, `$AppSecret` must be provided in the script manually.
+    Optional. Indicates whether to retrieve the AppSecret from an Azure Key Vault.
+.PARAMETER AppSecret
+    Conditionally required. The app secret for authentication to the multitenant enterprise app. Required if Key Vault retrieval is disabled ($KeyVault = $false).
+.PARAMETER SPNAppID
+    Conditionally required. The app ID for authentication to Key Vault. Required if Key Vault retrieval is enabled ($KeyVault = $true).
+.PARAMETER SPNSecret
+    Conditionally required. The app secret for authentication to Key Vault. Required if Key Vault retrieval is enabled ($KeyVault = $true).
+.PARAMETER SPNTenantID
+    Conditionally required. The tenant ID for authentication to Key Vault. Required if Key Vault retrieval is enabled ($KeyVault = $true).
+.PARAMETER VaultName
+    Conditionally required. The name of the Azure Key Vault to retrieve the secret from. Required if Key Vault retrieval is enabled ($KeyVault = $true).
+.PARAMETER SecretName
+    Conditionally required. The name of the secret in Azure Key Vault that contains the app secret. Required if Key Vault retrieval is enabled ($KeyVault = $true).
+.PARAMETER SetupCompleteUrl
+    Optional. A URL to download a SetupComplete.ps1 script. This script will be copied to the WinPE image and will run during the SetupComplete phase before OOBE.
+.PARAMETER ParametersUrl
+    Optional. If provided, the script will read tenant information from the downloaded JSON instead of using hardcoded tenant parameters inside this script.
 .NOTES
-    File Name: TenantSelectorAutopilotHashUpload.ps1
-    Author: https://github.com/MEMthusiast
-    Autopilot logic based on: https://github.com/blawalt/WinPEAP
+    File Name   : TenantSelectorAutopilotHashUpload.ps1
+    Author      : https://github.com/MEMthusiast
+    Version     : 2.1
+    Purpose     : Upload device hashes to selected tenant's Autopilot.
+    Requires    : OSDCloud, a multi-tenant Entra ID enterprise app in each customer tenant, and optionally an Azure Key Vault for secret retrieval and hosting the SetupComplete.ps1 and config.json files in an Azure Blob that is only accessable from a trusted public IP address.
+    References  : Autopilot upload logic based on: https://github.com/blawal/WinPEAP
+    Usage       : Can be used as a standalone script but used best in combiantion with OSDCloud. This is automatically executed as part of the OSDCloud process. Customize parameters as needed before deployment.
 #>
 
-#region required parameters
+#region Required Parameters
+    $GroupTag           = ""        # Set the desired Autopilot group tag for the device
+    $UploadToAutopilot  = $true     # Set to $false to disable Autopilot upload, or $true to enable the upload step
+    $AppId              = ""        # The app ID of the multitenant Entra ID app registration.
+    $KeyVault           = $true     # Set to $false to skip Key Vault retrieval and use hardcoded $AppSecret. Set to $true to use Key Vault.
+#endregion
 
-    $GroupTag = "<YourGroupTag>"         # Set the desired Autopilot group tag for the device
-    $UploadToAutopilot = $true           # Set to $false to disable Autopilot upload, or $true to enable the upload step
-    $AppId = "<MultitenantAppId>"        # The app ID of the multitenant Entra ID app registration.
-    $AppSecret = "MultitenantAppSecret"  # Don't use this when using Key Vault retrieval.
-    $KeyVault = $true                    # Set to $false to skip Key Vault retrieval and use hardcoded $AppSecret. Set to $true to use Key Vault.
+#region Conditionally Required Parameters
+    $AppSecret          = ""    # Don't use this when using Key Vault retrieval.
+#endregion
 
-#endregion required parameters
-
-#region optional parameters
-
-    $SPNAppID           = "<AppId>"         # The app ID for authentication to Key Vault.
-    $SPNSecret          = "<AppSecret>"     # The app secret for authentication to Key Vault.
-    $SPNTenantID        = "<TenantId>"      # The tenant ID for authentication to Key Vault.
-    $VaultName          = "<KeyVaultName>"  # Name of your Key Vault
-    $SecretName         = "<SecretName>"    # Name of the secret to retrieve
-    $SetupCompleteUrl   = "<URL>"           # Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/SetupComplete/SetupComplete.ps1
-    $ParametersUrl      = "<URL>"           # Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/config.json
-
-#endregion optional parameters
+#region Optional Parameters
+    $SPNAppID           = ""    # The app ID for authentication to Key Vault.
+    $SPNSecret          = ""    # The app secret for authentication to Key Vault.
+    $SPNTenantID        = ""    # The tenant ID for authentication to Key Vault.
+    $VaultName          = ""    # Name of your Key Vault
+    $SecretName         = ""    # Name of the secret to retrieve
+    $SetupCompleteUrl   = ""    # Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/SetupComplete/SetupComplete.ps1
+    $ParametersUrl      = ""    # Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/config.json
+#endregion
 
 #region Key Vault
-
     if ($KeyVault) {
 
         try {
-            # Ensure NuGet provider
-            if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
-                Write-Host "Installing NuGet package provider..."
-                Install-PackageProvider -Name NuGet -Force -Confirm:$false
-            }
-
-            # Install required modules if missing
-            $requiredModules = @("Az.Accounts","Az.KeyVault")
-            foreach ($mod in $requiredModules) {
-                if (-not (Get-Module -ListAvailable -Name $mod)) {
-                    Write-Host "Installing module $mod..."
-                    Install-Module -Name $mod -Force -Confirm:$false
+                # Ensure NuGet provider exists
+                if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+                    Write-Host "Installing NuGet package provider..." -ForegroundColor Yellow
+                    Install-PackageProvider -Name NuGet -Force                    
                 }
-            }
+
+                # Trust PSGallery
+                Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+
+                # Install Az.Accounts
+                if (-not (Get-Module -ListAvailable -Name Az.Accounts)) {
+                    Write-Host "Installing Az.Accounts module..." -ForegroundColor Yellow
+                    Install-Module Az.Accounts -Repository PSGallery -Force -SkipPublisherCheck                    
+                }
+
+                # Install Az.KeyVault
+                if (-not (Get-Module -ListAvailable -Name Az.KeyVault)) {
+                    Write-Host "Installing Az.KeyVault module..." -ForegroundColor Yellow
+                    Install-Module Az.KeyVault -Repository PSGallery -Force -SkipPublisherCheck                    
+                }
 
             Import-Module Az.Accounts -Force
             Import-Module Az.KeyVault -Force
 
-            # Connect to Azure using SPN 
-            Write-Host "Connecting to Azure using Service Principal..."
+            # Connect to Entra ID using SPN 
+            Write-Host "Connecting to Entra ID using Service Principal..." -ForegroundColor Yellow
             $password = ConvertTo-SecureString $SPNSecret -AsPlainText -Force
             $psCredential = New-Object System.Management.Automation.PSCredential ($SPNAppID, $password)
             Connect-AzAccount -ServicePrincipal -Credential $psCredential -Tenant $SPNTenantID
 
             # Retrieve the secret from Key Vault 
-            Write-Host "Retrieving secret '$SecretName' from Key Vault '$VaultName'..."
+            Write-Host "Retrieving secret from Key Vault..." -ForegroundColor Yellow
             $AppSecret = Get-AzKeyVaultSecret -VaultName "$VaultName" -Name "$SecretName" -AsPlainText
-            Write-Host "Secret retrieved from Key Vault successfully."
+            Write-Host "Secret retrieved from Key Vault successfully." -ForegroundColor Green
 
         } catch {
             if ($_.Exception.Message -like "*Forbidden*") {
-                Write-Error "Access denied: Your IP is not allowed by the Key Vault firewall."
+                Write-Error "Access denied: Your IP is not allowed by the Key Vault firewall." -foregroundColor Red
             } else {
-                Write-Error "Failed to retrieve secret: $($_.Exception.Message)."
+                Write-Error "Failed to retrieve secret: $($_.Exception.Message)." -foregroundColor Red
             }       
         }
     } else {
-        Write-Host "KeyVault retrieval skipped."
+        Write-Host "KeyVault retrieval skipped." -ForegroundColor Yellow
     }
+#endregion
 
-#endregion Key Vault
-
-#region injected parameters
-
+#region Injected Parameters
     # If ParametersUrl is provided, read tenant information from the config file instead of using hardcoded parameters. This allows for dynamic configuration without modifying the script.
 
     if (-not [string]::IsNullOrWhiteSpace($ParametersUrl)) {
@@ -140,18 +142,16 @@
         Write-Error "Failed to download $FileName : $($_.Exception.Message)"
     }
 
-    $config = Get-Content "X:\OSDCloud\Config\config.json" -Raw | ConvertFrom-Json
+    $config = Get-Content "$DestinationFolder\config.json" -Raw | ConvertFrom-Json
     $Tenants = $config.Tenants
 
     }
     else {
         Write-Host "ParameterUrl not provided. Using hardcoded parameters." -ForegroundColor Yellow
     }
+#endregion
 
-#endregion injected parameters
-
-#region hardcoded parameters
-
+#region Hardcoded Tenant Parameters
     # If ParametersUrl is not provided, use hardcoded tenant information. This is useful if you prefer to have the tenant information directly in the script.
 
     if ( [string]::IsNullOrWhiteSpace($ParametersUrl)) {
@@ -174,11 +174,9 @@
     else {
         Write-Host "ParametersUrl provided. Skipping hardcoded parameters and using injected parameters." -ForegroundColor Yellow
     }
-
-#endregion hardcoded parameters
+#endregion
 
 #region Tenant Selection UI
-
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
@@ -275,11 +273,9 @@
     $form.ShowDialog()
 
     Write-Host "Selected customer: $TenantName" -ForegroundColor Green
-
-#endregion Tenant Selection UI
+#endregion
 
 #region Autopilot Upload
-
     # Functions for Autopilot API operations
     function Get-AuthToken {
         [CmdletBinding()]
@@ -641,11 +637,9 @@
     if (-not $profileAssigned) {
         Write-Host "Autopilot profile was not assigned within expected time." -ForegroundColor Yellow
     }
-
-#endregion Autopilot Upload
+#endregion
 
 #region Download SetupComplete.ps1
-
     if (-not [string]::IsNullOrWhiteSpace($SetupCompleteUrl)) {
 
     Write-Host "Downloading SetupComplete.ps1..." -ForegroundColor Cyan
@@ -679,8 +673,7 @@
     else {
     Write-Host "SetupCompleteUrl not provided. Skipping SetupComplete.ps1 download." -ForegroundColor Yellow
     }
- 
-#endregion Download SetupComplete.ps1
+#endregion
 
 # Return to original directory
 Pop-Location
