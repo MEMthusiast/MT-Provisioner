@@ -1,1 +1,1 @@
-StartOSDCloud -OSVersion 'Windows 11' -OSBuild 25H2 -OSEdition Pro -OSLanguage nl-nl -OSLicense Volume -ZTI -Restart -OSActivation
+Start-OSDCloud -OSVersion 'Windows 11' -OSBuild 25H2 -OSEdition Pro -OSLanguage nl-nl -OSLicense Volume -ZTI -Restart -OSActivation
