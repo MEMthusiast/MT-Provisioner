@@ -67,12 +67,18 @@
     $ParametersUrl      = ""    # Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/config.json
 #endregion
 
+# Get public IP address
+    try {
+    $publicIP = (Invoke-RestMethod -Uri "https://api.ipify.org?format=json").ip
+    } catch {} 
+
 #region: Key Vault
     if ($KeyVault) {
 
     try {
         # Get token for Key Vault
         Write-Host "Requesting Key Vault token..." -ForegroundColor Yellow
+
 
         $tokenResponse = Invoke-RestMethod -Method Post `
             -Uri "https://login.microsoftonline.com/$SPNTenantID/oauth2/v2.0/token" `
@@ -88,7 +94,7 @@
 
         $uri = "https://$VaultName.vault.azure.net/secrets/$SecretName/?api-version=7.3"
 
-        Write-Host "Calling Key Vault" -ForegroundColor Cyan
+        Write-Host "Calling Key Vault from public IP: $publicIP" -ForegroundColor Cyan
 
         # Call Key Vault
         $response = Invoke-RestMethod -Method Get `
@@ -135,12 +141,14 @@
         $DestinationFile = Join-Path -Path $DestinationFolder -ChildPath $FileName
 
         # Download parameter file
+        Write-Host "Downloading $FileName from public IP: $publicIP" -ForegroundColor Cyan
+
         Invoke-WebRequest -Uri $ParametersUrl -OutFile $DestinationFile -UseBasicParsing -ErrorAction Stop
 
         Write-Host "$FileName downloaded successfully to $DestinationFolder." -ForegroundColor Green
     }
     catch {
-        Write-Error "Failed to download $FileName : $($_.Exception.Message)"
+        Write-Error "Failed to download $FileName : $($_.Exception.Message)" -ForegroundColor Red
     }
 
     $config = Get-Content "$DestinationFolder\config.json" -Raw | ConvertFrom-Json
@@ -643,8 +651,6 @@
 #region: Download SetupComplete.ps1
     if (-not [string]::IsNullOrWhiteSpace($SetupCompleteUrl)) {
 
-    Write-Host "Downloading SetupComplete.ps1..." -ForegroundColor Cyan
-
     $DestinationFolder = "X:\OSDCloud\Config\Scripts\SetupComplete"
 
     try {
@@ -656,15 +662,11 @@
         $DestinationFile = Join-Path -Path $DestinationFolder -ChildPath $FileName
 
         # Download only if folder exists
-        if ((Test-Path -Path $DestinationFolder)) {
+            Write-Host "Downloading $FileName from public IP: $publicIP" -ForegroundColor Cyan
 
             Invoke-WebRequest -Uri $SetupCompleteUrl -OutFile $DestinationFile -UseBasicParsing -ErrorAction Stop
 
             Write-Host "$FileName downloaded successfully to $DestinationFolder." -ForegroundColor Green
-        }
-        else {
-            Write-Host "Folder $DestinationFolder does not exist." -ForegroundColor Yellow
-        }
     }
     catch {
         Write-Error "Failed to download $FileName $($_.Exception.Message)" -ForegroundColor Red
