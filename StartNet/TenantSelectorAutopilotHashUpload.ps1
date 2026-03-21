@@ -39,25 +39,25 @@
 .NOTES
     File Name   : TenantSelectorAutopilotHashUpload.ps1
     Author      : https://github.com/MEMthusiast
-    Version     : 2.1
+    Version     : 2.2
     Purpose     : Upload device hashes to selected tenant's Autopilot.
     Requires    : OSDCloud, a multi-tenant Entra ID enterprise app in each customer tenant, and optionally an Azure Key Vault for secret retrieval and hosting the SetupComplete.ps1 and config.json files in an Azure Blob that is only accessable from a trusted public IP address.
     References  : Autopilot upload logic based on: https://github.com/blawal/WinPEAP
     Usage       : Can be used as a standalone script but used best in combiantion with OSDCloud. This is automatically executed as part of the OSDCloud process. Customize parameters as needed before deployment.
 #>
 
-#region Required Parameters
+#region: Required Parameters
     $GroupTag           = ""        # Set the desired Autopilot group tag for the device
     $UploadToAutopilot  = $true     # Set to $false to disable Autopilot upload, or $true to enable the upload step
     $AppId              = ""        # The app ID of the multitenant Entra ID app registration.
     $KeyVault           = $true     # Set to $false to skip Key Vault retrieval and use hardcoded $AppSecret. Set to $true to use Key Vault.
 #endregion
 
-#region Conditionally Required Parameters
+#region: Conditionally Required Parameters
     $AppSecret          = ""    # Don't use this when using Key Vault retrieval.
 #endregion
 
-#region Optional Parameters
+#region: Optional Parameters
     $SPNAppID           = ""    # The app ID for authentication to Key Vault.
     $SPNSecret          = ""    # The app secret for authentication to Key Vault.
     $SPNTenantID        = ""    # The tenant ID for authentication to Key Vault.
@@ -67,58 +67,59 @@
     $ParametersUrl      = ""    # Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/config.json
 #endregion
 
-#region Key Vault
+#region: Key Vault
     if ($KeyVault) {
 
-        try {
-                # Ensure NuGet provider exists
-                if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
-                    Write-Host "Installing NuGet package provider..." -ForegroundColor Yellow
-                    Install-PackageProvider -Name NuGet -Force                    
-                }
+    try {
+        # Get token for Key Vault
+        Write-Host "Requesting Key Vault token..." -ForegroundColor Yellow
 
-                # Trust PSGallery
-                Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        $tokenResponse = Invoke-RestMethod -Method Post `
+            -Uri "https://login.microsoftonline.com/$SPNTenantID/oauth2/v2.0/token" `
+            -Body @{
+                client_id     = $SPNAppID
+                client_secret = $SPNSecret
+                scope         = "https://vault.azure.net/.default"
+                grant_type    = "client_credentials"
+            } `
+            -ContentType "application/x-www-form-urlencoded"
 
-                # Install Az.Accounts
-                if (-not (Get-Module -ListAvailable -Name Az.Accounts)) {
-                    Write-Host "Installing Az.Accounts module..." -ForegroundColor Yellow
-                    Install-Module Az.Accounts -Repository PSGallery -Force -SkipPublisherCheck                    
-                }
+        $accessToken = $tokenResponse.access_token
 
-                # Install Az.KeyVault
-                if (-not (Get-Module -ListAvailable -Name Az.KeyVault)) {
-                    Write-Host "Installing Az.KeyVault module..." -ForegroundColor Yellow
-                    Install-Module Az.KeyVault -Repository PSGallery -Force -SkipPublisherCheck                    
-                }
+        $uri = "https://$VaultName.vault.azure.net/secrets/$SecretName/?api-version=7.3"
 
-            Import-Module Az.Accounts -Force
-            Import-Module Az.KeyVault -Force
+        Write-Host "Calling Key Vault" -ForegroundColor Cyan
 
-            # Connect to Entra ID using SPN 
-            Write-Host "Connecting to Entra ID using Service Principal..." -ForegroundColor Yellow
-            $password = ConvertTo-SecureString $SPNSecret -AsPlainText -Force
-            $psCredential = New-Object System.Management.Automation.PSCredential ($SPNAppID, $password)
-            Connect-AzAccount -ServicePrincipal -Credential $psCredential -Tenant $SPNTenantID
+        # Call Key Vault
+        $response = Invoke-RestMethod -Method Get `
+            -Uri $uri `
+            -Headers @{
+                Authorization = "Bearer $accessToken"
+            }
 
-            # Retrieve the secret from Key Vault 
-            Write-Host "Retrieving secret from Key Vault..." -ForegroundColor Yellow
-            $AppSecret = Get-AzKeyVaultSecret -VaultName "$VaultName" -Name "$SecretName" -AsPlainText
-            Write-Host "Secret retrieved from Key Vault successfully." -ForegroundColor Green
+        Write-Host "Secret retrieved successfully." -ForegroundColor Green
+        $AppSecret = $response.value
+    }
+    catch {
+        Write-Host "Key Vault error:" -ForegroundColor Red
+        Write-Host $_ -ForegroundColor Red
 
-        } catch {
-            if ($_.Exception.Message -like "*Forbidden*") {
-                Write-Error "Access denied: Your IP is not allowed by the Key Vault firewall." -foregroundColor Red
-            } else {
-                Write-Error "Failed to retrieve secret: $($_.Exception.Message)." -foregroundColor Red
-            }       
+        if ($_.Exception.Response) {
+            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+            $reader.BaseStream.Position = 0
+            $reader.DiscardBufferedData()
+            $body = $reader.ReadToEnd()
+            Write-Host "Response body:" -ForegroundColor DarkRed
+            Write-Host $body -ForegroundColor DarkRed
         }
-    } else {
-        Write-Host "KeyVault retrieval skipped." -ForegroundColor Yellow
+
+        throw
+    }
+ 
     }
 #endregion
 
-#region Injected Parameters
+#region: Injected Parameters
     # If ParametersUrl is provided, read tenant information from the config file instead of using hardcoded parameters. This allows for dynamic configuration without modifying the script.
 
     if (-not [string]::IsNullOrWhiteSpace($ParametersUrl)) {
@@ -151,7 +152,7 @@
     }
 #endregion
 
-#region Hardcoded Tenant Parameters
+#region: Hardcoded Tenant Parameters
     # If ParametersUrl is not provided, use hardcoded tenant information. This is useful if you prefer to have the tenant information directly in the script.
 
     if ( [string]::IsNullOrWhiteSpace($ParametersUrl)) {
@@ -176,7 +177,7 @@
     }
 #endregion
 
-#region Tenant Selection UI
+#region: Tenant Selection UI
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
@@ -275,7 +276,7 @@
     Write-Host "Selected customer: $TenantName" -ForegroundColor Green
 #endregion
 
-#region Autopilot Upload
+#region: Autopilot Upload
     # Functions for Autopilot API operations
     function Get-AuthToken {
         [CmdletBinding()]
@@ -639,7 +640,7 @@
     }
 #endregion
 
-#region Download SetupComplete.ps1
+#region: Download SetupComplete.ps1
     if (-not [string]::IsNullOrWhiteSpace($SetupCompleteUrl)) {
 
     Write-Host "Downloading SetupComplete.ps1..." -ForegroundColor Cyan
