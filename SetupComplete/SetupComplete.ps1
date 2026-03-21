@@ -61,6 +61,9 @@
     If (Test-Path -Path 'C:\OSDCloud\Logs') {
         Move-Item 'C:\OSDCloud\Logs\*.*' -Destination 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\OSD' -Force
     }
+    If (Test-Path -Path 'C:\OSDCloud\Scripts\SetupComplete') {
+        Move-Item 'C:\OSDCloud\Scripts\SetupComplete\*.log' -Destination 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\OSD' -Force
+    }
     If (Test-Path -Path 'C:\Windows\Temp\osdcloud-logs') {
         Get-ChildItem 'C:\Windows\Temp\osdcloud-logs' | Copy-Item -Destination 'C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\OSD' -Force
     }

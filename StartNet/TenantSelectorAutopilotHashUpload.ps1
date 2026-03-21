@@ -67,10 +67,20 @@
     $ParametersUrl      = ""    # Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/config.json
 #endregion
 
-# Get public IP address
+#region: Start Logging
+    # Start transcript
+    $Global:Transcript = "$((Get-Date).ToString('dd-MM-yyyy HH:mm:ss'))-Invoke-MT-AP-Script.log"
+    Start-Transcript -Path (Join-Path "X:\OSDCloud\Config\Scripts\SetupComplete" $Global:Transcript) -ErrorAction Ignore
+
+    # Start timer
+    $startTime = Get-Date
+    Write-Host "Script started at: $($startTime.ToString('dd-MM-yyyy HH:mm:ss'))" -ForegroundColor Yellow
+
+    # Get public IP address
     try {
     $publicIP = (Invoke-RestMethod -Uri "https://api.ipify.org?format=json").ip
-    } catch {} 
+        } catch {} 
+#endregion
 
 #region: Key Vault
     if ($KeyVault) {
@@ -78,7 +88,6 @@
     try {
         # Get token for Key Vault
         Write-Host "Requesting Key Vault token..." -ForegroundColor Yellow
-
 
         $tokenResponse = Invoke-RestMethod -Method Post `
             -Uri "https://login.microsoftonline.com/$SPNTenantID/oauth2/v2.0/token" `
@@ -677,6 +686,20 @@
     Write-Host "SetupCompleteUrl not provided. Skipping SetupComplete.ps1 download." -ForegroundColor Yellow
     }
 #endregion
+
+#region: Stop Logging
+    # End timer
+    $endTime = Get-Date
+    $duration = $endTime - $startTime
+    $durationFormatted = "{0:hh\:mm\:ss}" -f $duration
+
+    Write-Host "Script ended at: $($endTime.ToString('dd-MM-yyyy HH:mm:ss'))" -ForegroundColor Yellow
+    Write-Host "Total runtime: $durationFormatted" -ForegroundColor Cyan
+    Stop-Transcript
+#endregion
+
+Write-Host "Starting OSDCloud in 10 seconds..." -ForegroundColor Yellow
+Start-Sleep -Seconds 10
 
 # Return to original directory
 Pop-Location
