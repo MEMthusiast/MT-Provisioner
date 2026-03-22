@@ -75,7 +75,44 @@
     # Start timer
     $startTime = Get-Date
     Write-Host "Script started at: $($startTime.ToString('dd-MM-yyyy-HHmmss'))" -ForegroundColor Yellow
+#endregion
 
+#region: Test internet connectity
+    if ($KeyVault -or $SetupCompleteUrl -or $ParametersUrl) {
+        Write-Host "`nInternet connectivity is required. Checking connection..." -ForegroundColor Cyan
+
+        $RetryInterval = 10
+        $firstAttempt = $true
+
+        while ($true) {
+            try {
+                # Test internet connectivity
+                Invoke-WebRequest -Uri "https://www.microsoft.com/" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null
+                Write-Host "`nInternet connection detected. Continuing script..." -ForegroundColor Green
+                break
+            }
+            catch {
+                if ($firstAttempt) {
+                    Write-Host "`nNo internet connection detected." -ForegroundColor Yellow
+                    Write-Host "Please connect the device to the network." -ForegroundColor Yellow
+                    $firstAttempt = $false
+                }
+
+                # Countdown
+                for ($i = $RetryInterval; $i -gt 0; $i--) {
+                    Write-Host -NoNewline "`rRetrying in $i seconds..."
+                    Start-Sleep -Seconds 1
+                }
+
+                # Overwrite the countdown line with "Retrying now..."
+                Write-Host -NoNewline "`rRetrying now...           " # Extra spaces to overwrite previous text
+            }
+        }
+    }
+    else {
+        Write-Host "No internet-dependent parameters configured." -ForegroundColor Cyan
+        Write-Host "Continuing without internet connectivity. Script functionality may be limited." -ForegroundColor Yellow
+    }
     # Get public IP address
     try {
     $publicIP = (Invoke-RestMethod -Uri "https://api.ipify.org?format=json").ip
