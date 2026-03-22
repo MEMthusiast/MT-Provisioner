@@ -39,7 +39,7 @@
 .NOTES
     File Name   : TenantSelectorAutopilotHashUpload.ps1
     Author      : https://github.com/MEMthusiast
-    Version     : 2.3
+    Version     : 2.4
     Purpose     : Upload device hashes to selected tenant's Autopilot.
     Requires    : OSDCloud, a multi-tenant Entra ID enterprise app in each customer tenant, and optionally an Azure Key Vault for secret retrieval and hosting the SetupComplete.ps1 and config.json files in an Azure Blob that is only accessable from a trusted public IP address.
     References  : Autopilot upload logic based on: https://github.com/blawal/WinPEAP
@@ -197,7 +197,7 @@
         Write-Error "Failed to download $FileName : $($_.Exception.Message)" -ForegroundColor Red
     }
 
-    $config = Get-Content "$DestinationFolder\config.json" -Raw | ConvertFrom-Json
+    $config = Get-Content "$DestinationFile" -Raw | ConvertFrom-Json
     $Tenants = $config.Tenants
 
     }
@@ -327,7 +327,7 @@
     # Show the form
     $form.ShowDialog()
 
-    Write-Host "Selected customer: $TenantName" -ForegroundColor Green
+    Write-Host "Selected Tenant: $TenantName" -ForegroundColor Green
 #endregion
 
 #region: Autopilot Upload
@@ -517,127 +517,221 @@
     Write-Host "Running OA3Tool to gather hardware hash..." -ForegroundColor Green
     &$PSScriptRoot\oa3tool.exe /Report /ConfigFile=$PSScriptRoot\OA3.cfg /NoKeyCheck
 
-    # Check if Hash was found
-    If (Test-Path $PSScriptRoot\OA3.xml) 
+  # Check if Hash was found
+    If (Test-Path $PSScriptRoot\OA3.xml)
     {
         # Read Hash from generated XML File
         [xml]$xmlhash = Get-Content -Path "$PSScriptRoot\OA3.xml"
         $hash = $xmlhash.Key.HardwareHash
         Write-Host "Hardware Hash successfully retrieved" -ForegroundColor Green
-        
+
         # Delete XML File
         Remove-Item $PSScriptRoot\OA3.xml -Force
-        
+
         # Output the hash information to screen
         Write-Host "Serial Number: $serial" -ForegroundColor Cyan
         Write-Host "Group Tag: $GroupTag" -ForegroundColor Cyan
         Write-Host "Hardware Hash length: $(($hash).Length) characters" -ForegroundColor Cyan
-        
+
         # Create temporary CSV file in case it's needed
-        $TempCSVPath = "X:\Windows\Temp\AutopilotHash.csv"
-        
+        $TempCSVPath = "X:\OSDCloud\Config\Scripts\SetupComplete\AutopilotHash.csv"
+
         # Create the CSV object
         $computers = @()
         $product = ""
-        
+
         if ($GroupTag -ne "")
         {
             # Create a pipeline object with Group Tag
             $c = New-Object psobject -Property @{
                 "Device Serial Number" = $serial
-                "Windows Product ID" = $product
-                "Hardware Hash" = $hash
-                "Group Tag" = $GroupTag
+                "Windows Product ID"   = $product
+                "Hardware Hash"        = $hash
+                "Group Tag"            = $GroupTag
             }
-            
+
             # Save to temp CSV
             $computers += $c
-            $computers | Select "Device Serial Number", "Windows Product ID", "Hardware Hash", "Group Tag" | 
-                ConvertTo-CSV -NoTypeInformation | % {$_ -replace '"',''} | Out-File $TempCSVPath
+            $computers |
+                Select-Object "Device Serial Number", "Windows Product ID", "Hardware Hash", "Group Tag" |
+                ConvertTo-Csv -NoTypeInformation |
+                ForEach-Object { $_ -replace '"','' } |
+                Out-File $TempCSVPath
         }
         else
         {
             # Create a pipeline object without Group Tag
             $c = New-Object psobject -Property @{
                 "Device Serial Number" = $serial
-                "Windows Product ID" = $product
-                "Hardware Hash" = $hash
+                "Windows Product ID"   = $product
+                "Hardware Hash"        = $hash
             }
-            
+
             # Save to temp CSV
             $computers += $c
-            $computers | Select "Device Serial Number", "Windows Product ID", "Hardware Hash" | 
-                ConvertTo-CSV -NoTypeInformation | % {$_ -replace '"',''} | Out-File $TempCSVPath
+            $computers |
+                Select-Object "Device Serial Number", "Windows Product ID", "Hardware Hash" |
+                ConvertTo-Csv -NoTypeInformation |
+                ForEach-Object { $_ -replace '"','' } |
+                Out-File $TempCSVPath
         }
-        
+
         Write-Host "CSV file created at: $TempCSVPath" -ForegroundColor Green
-        
+
         # Upload to Autopilot if requested
+        $authToken = $null
+        $authSucceeded = $false
+        $uploadSucceeded = $false
+        $deviceAlreadyExists = $false
+
         if ($UploadToAutopilot)
         {
             if (-not $TenantId -or -not $AppId -or -not $AppSecret)
             {
-                Write-Host "Error: TenantId , AppId, and AppSecret parameters are required for Autopilot upload" -ForegroundColor Red
+                Write-Host "Error: TenantId, AppId, and AppSecret parameters are required for Autopilot upload" -ForegroundColor Red
             }
             else
             {
-                try {
+                try
+                {
                     # Get auth token
                     Write-Host "Getting authorization token..." -ForegroundColor Yellow
                     $authToken = Get-AuthToken -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret
-                    
-                    # Upload device to Autopilot
-                    Write-Host "Adding device to Autopilot..." -ForegroundColor Yellow
-                    $importedDevice = Add-AutopilotImportedDevice -SerialNumber $serial -HardwareHash $hash -GroupTag $GroupTag -AuthToken $authToken
-                    
-                    #Check if device already exists in Autopilot
-                    $device = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
-                    if ($device) {
-                        #Device already exists in Autopilot
+                    $authSucceeded = $true
+
+                    # Check if device already exists in Autopilot before upload
+                    $existingDevice = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
+                    if ($existingDevice)
+                    {
+                        $deviceAlreadyExists = $true
                         Write-Host "Device already exists in Autopilot with SerialNumber: $serial" -ForegroundColor Green
+                        Write-Host "Skipping upload and profile assignment check." -ForegroundColor Yellow
                     }
-                    else {
-                        if ($importedDevice) {
+                    else
+                    {
+                        # Upload device to Autopilot
+                        Write-Host "Adding device to Autopilot..." -ForegroundColor Yellow
+                        $importedDevice = Add-AutopilotImportedDevice -SerialNumber $serial -HardwareHash $hash -GroupTag $GroupTag -AuthToken $authToken
+
+                        if ($importedDevice)
+                        {
                             Write-Host "Device added successfully with ID: $($importedDevice.id)" -ForegroundColor Green
-                            
-                            # Wait for processing to complete
+
+                            # Wait for import processing to complete
                             Write-Host "Waiting for import to complete..." -ForegroundColor Yellow
                             $processingComplete = $false
                             $maxRetries = 20
                             $retryCount = 0
-                            
-                            while (-not $processingComplete -and $retryCount -lt $maxRetries) {
+
+                            while (-not $processingComplete -and $retryCount -lt $maxRetries)
+                            {
                                 Start-Sleep -Seconds 15
                                 $device = Get-AutopilotImportedDevice -Id $importedDevice.id -AuthToken $authToken
-                                
-                                if ($device.state.deviceImportStatus -eq "complete") {
+
+                                if ($device.state.deviceImportStatus -eq "complete")
+                                {
                                     $processingComplete = $true
+                                    $uploadSucceeded = $true
                                     Write-Host "Import completed successfully!" -ForegroundColor Green
                                     Write-Host "Device Registration ID: $($device.state.deviceRegistrationId)" -ForegroundColor Cyan
                                 }
-                                elseif ($device.state.deviceImportStatus -eq "error") {
+                                elseif ($device.state.deviceImportStatus -eq "error")
+                                {
                                     Write-Host "Import failed with error: $($device.state.deviceErrorCode) - $($device.state.deviceErrorName)" -ForegroundColor Red
                                     break
                                 }
-                                else {
+                                else
+                                {
                                     Write-Host "Import status: $($device.state.deviceImportStatus). Waiting..." -ForegroundColor Yellow
                                     $retryCount++
                                 }
                             }
-                            
-                            if (-not $processingComplete) {
+
+                            if (-not $processingComplete)
+                            {
                                 Write-Host "Import did not complete within the expected time." -ForegroundColor Yellow
                             }
                         }
+                        else
+                        {
+                            Write-Host "Import request did not return a device object." -ForegroundColor Yellow
+                        }
                     }
                 }
-                catch {
+                catch
+                {
                     Write-Host "An error occurred during the Autopilot upload process: $_" -ForegroundColor Red
                 }
             }
         }
-        else {
+        else
+        {
             Write-Host "Skipping Autopilot upload. Use -UploadToAutopilot switch with required parameters to upload." -ForegroundColor Yellow
+        }
+
+        # Only check profile assignment if:
+        # 1) authentication succeeded
+        # 2) the device was uploaded successfully in THIS run
+        # 3) the device did not already exist before upload
+        if ($authSucceeded -and $uploadSucceeded -and -not $deviceAlreadyExists)
+        {
+            Write-Host "Waiting for Autopilot profile assignment..." -ForegroundColor Yellow
+            $profileAssigned = $false
+            $maxRetries = 50
+            $retryCount = 0
+
+            while (-not $profileAssigned -and $retryCount -lt $maxRetries)
+            {
+                Start-Sleep -Seconds 15
+                $apDevice = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
+
+                if ($apDevice)
+                {
+                    $status = $apDevice.deploymentProfileAssignmentStatus
+
+                    if ($status -in @("assignedUnkownSyncState","assignedInSync","assignedOutOfSync"))
+                    {
+                        Write-Host "Autopilot profile assigned successfully!" -ForegroundColor Green                        
+                        $profileAssigned = $true
+                    }
+                    elseif ($status -eq "pending")
+                    {
+                        Write-Host "Profile assignment in progress..." -ForegroundColor Yellow
+                    }
+                    else
+                    {
+                        Write-Host "Profile status: $status - waiting..." -ForegroundColor Yellow
+                    }
+                }
+                else
+                {
+                    Write-Host "Device not yet visible in Autopilot device list..." -ForegroundColor Yellow
+                }
+
+                $retryCount++
+            }
+
+            if (-not $profileAssigned)
+            {
+                Write-Host "Autopilot profile was not assigned within expected time." -ForegroundColor Yellow
+            }
+        }
+        else
+        {
+            Write-Host "Skipping Autopilot profile assignment check." -ForegroundColor Yellow
+
+            if ($deviceAlreadyExists)
+            {
+                Write-Host "Reason: device was already present in Autopilot." -ForegroundColor Yellow
+            }
+            elseif (-not $authSucceeded)
+            {
+                Write-Host "Reason: authentication did not succeed." -ForegroundColor Yellow
+            }
+            elseif (-not $uploadSucceeded)
+            {
+                Write-Host "Reason: upload/import did not complete successfully in this run." -ForegroundColor Yellow
+            }
         }
     }
     else
@@ -645,52 +739,6 @@
         Write-Host "No Hardware Hash found" -ForegroundColor Red
         Pop-Location
         exit 1
-    }
-
-    Write-Host "Waiting for Autopilot profile assignment..." -ForegroundColor Yellow
-
-    $profileAssigned = $false
-    $maxRetries = 50
-    $retryCount = 0
-
-    while (-not $profileAssigned -and $retryCount -lt $maxRetries) {
-
-        Start-Sleep -Seconds 15
-
-        $apDevice = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
-
-        if ($apDevice) {
-
-            $status = $apDevice.deploymentProfileAssignmentStatus
-
-            if ($status -eq "assignedUnkownSyncState") {
-
-                Write-Host "Autopilot profile assigned successfully!" -ForegroundColor Green
-                Write-Host "Profile ID: $($apDevice.deploymentProfileId)" -ForegroundColor Cyan
-                $profileAssigned = $true
-
-            }
-            elseif ($status -eq "assigning") {
-
-                Write-Host "Profile assignment in progress..." -ForegroundColor Yellow
-
-            }
-            else {
-
-                Write-Host "Profile status: $status - waiting..." -ForegroundColor Yellow
-            }
-
-        }
-        else {
-
-            Write-Host "Device not yet visible in Autopilot device list..." -ForegroundColor Yellow
-        }
-
-        $retryCount++
-    }
-
-    if (-not $profileAssigned) {
-        Write-Host "Autopilot profile was not assigned within expected time." -ForegroundColor Yellow
     }
 #endregion
 
@@ -712,7 +760,7 @@
 
             Invoke-WebRequest -Uri $SetupCompleteUrl -OutFile $DestinationFile -UseBasicParsing -ErrorAction Stop
 
-            Write-Host "$FileName downloaded successfully to $DestinationFolder." -ForegroundColor Green
+            Write-Host "$FileName downloaded successfully." -ForegroundColor Green
     }
     catch {
         Write-Error "Failed to download $FileName $($_.Exception.Message)" -ForegroundColor Red
