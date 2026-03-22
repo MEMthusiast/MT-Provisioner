@@ -1,4 +1,4 @@
-# Intune-Autopilot-MultiTenant
+# Multi-Tenant Autopilot Provisioner
 WinPE-compatible PowerShell tool to collect Autopilot hardware hashes, select a tenant, and register devices in Microsoft Intune with automatic profile assignment validation.
 
 This tool is designed for MSPs and to be run in combination with OSDCloud in a WinPE environment during the deployment of a Windows device.
