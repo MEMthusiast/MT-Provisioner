@@ -13,7 +13,7 @@
         6. Optionally downloads a tenant configuration JSON file, allowing for dynamic configuration without modifying the script.
         7. Supports retrieving the multitenant enterprise app secret from Azure Key Vault for enhanced security when allowing the keyvault to only be accessed from a trusted public IP address.
 .PARAMETER GroupTag
-    Required. The Autopilot group tag for the device.
+    Conditionally required. Set this parameter for tenants that don't have a GroupTag property in the config file (ParametersUrl or hardcoded parameters). The GroupTag value in the config will overwrite this value.
 .PARAMETER UploadToAutopilot
     Optional. Indicates whether to upload the device to Autopilot. Default is $false.
 .PARAMETER AppId
@@ -47,14 +47,14 @@
 #>
 
 #region: Required Parameters
-    $GroupTag           = ""        # Set the desired Autopilot group tag for the device
     $UploadToAutopilot  = $true     # Set to $false to disable Autopilot upload, or $true to enable the upload step
     $AppId              = ""        # The app ID of the multitenant Entra ID app registration.
     $KeyVault           = $true     # Set to $false to skip Key Vault retrieval and use hardcoded $AppSecret. Set to $true to use Key Vault.
 #endregion
 
 #region: Conditionally Required Parameters
-    $AppSecret          = ""    # Don't use this when using Key Vault retrieval.
+    $GroupTag           = ""    # Use this for tenants that don't have a GroupTag property in the config file (ParametersUrl or hardcoded parameters).
+    $AppSecret          = ""    # Use this when not using Key Vault for secret retrieval.
 #endregion
 
 #region: Optional Parameters
@@ -215,6 +215,7 @@
     @{
         Name = "Tenant 1"
         TenantId = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+        GroupTag = "AP-Tenant1"
     },
     @{
         Name = "Tenant 2"
@@ -260,6 +261,7 @@
             [PSCustomObject]@{
                 Name     = $_.Name
                 TenantId = $_.TenantId
+                GroupTag = $_.GroupTag
             }
         } else {
             $_
@@ -320,6 +322,11 @@
         # Set only tenant-related variables
         $script:TenantId   = $SelectedTenant.TenantId
         $script:TenantName = $SelectedTenant.Name
+
+        # Only override the default GroupTag if the tenant has one filled in
+        if (-not [string]::IsNullOrWhiteSpace($SelectedTenant.GroupTag)) {
+            $script:GroupTag = $SelectedTenant.GroupTag
+        }
 
         $form.Close()
     })

@@ -2,7 +2,8 @@
   "Tenants": [
     {
       "Name": "Tenant 1",
-      "TenantId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+      "TenantId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+      "GroupTag": "AP-Tenant1"
     },
     {
       "Name": "Tenant 2",
