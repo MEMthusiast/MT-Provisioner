@@ -1,17 +1,37 @@
 {
   "Tenants": [
     {
-      "Name": "Tenant 1",
-      "TenantId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
-      "GroupTag": "AP-Tenant1"
+      "Name": "Contoso",
+      "TenantId": "11111111-2222-3333-4444-555555555555",
+      "UploadToAutopilot": true,
+      "GroupTag": "GT1",
+      "OSVersion": "Windows 11",
+      "OSBuild": "25H2",
+      "OSEdition": "Pro",
+      "OSLanguage": "en-us",
+      "OSActivation": "Volume"
     },
     {
-      "Name": "Tenant 2",
-      "TenantId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+      "Name": "Contoso",
+      "TenantId": "11111111-2222-3333-4444-555555555555",
+      "UploadToAutopilot": true,
+      "GroupTag": "GT1",
+      "OSVersion": "Windows 11",
+      "OSBuild": "25H2",
+      "OSEdition": "Pro",
+      "OSLanguage": "nl-nl",
+      "OSActivation": "Volume"
     },
     {
-      "Name": "Tenant 3",
-      "TenantId": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+      "Name": "Windows 11 Pro - 25H2 - NL",
+      "TenantId": "66666666-7777-8888-9999-AAAAAAAAAAAA",
+      "UploadToAutopilot": false,
+      "GroupTag": "",
+      "OSVersion": "Windows 11",
+      "OSBuild": "25H2",
+      "OSEdition": "Pro",
+      "OSLanguage": "nl-nl",
+      "OSActivation": "Volume"
     }
   ]
 }

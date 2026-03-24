@@ -1,23 +1,23 @@
 ﻿<#
 .SYNOPSIS
-    Collects hardware hash in WinPE and uploads it to Intune Autopilot of the selected tenant. Optionally run a script before OOBE.
+    Collects hardware hash in WinPE and uploads it to Intune Autopilot of the selected tenant and install an operating system. Optionally run a script before OOBE.
 .DESCRIPTION
-    This script is designed for MSPs and to be run in combination with OSDCloud in a WinPE environment during the deployment of a Windows device.
+    This script is designed for managed service providers (MSPs) and is intended to be executed in conjunction with OSDCloud within a WinPE environment, after this script is finished an operating system will be deployed.
     The Graph authentication logic is based on a multi-tenant app registration in Entra ID, allowing the same App ID and App Secret to be used across all tenants.    
     It performs the following functions:
-        1. Displays a tenant selection UI for the user to choose which tenant to upload the hardware hash to.
-        2. Collects the hardware hash using OA3Tool, including TPM information by registering the PCPKsp.dll.
-        3. Uploads the hardware hash to the selected tenant's Intune Autopilot via Microsoft Graph API.
-        4. Waits for the Autopilot profile assignment to complete.
+        1. Displays a selection UI for the user to choose which tenant to upload the hardware hash to. Optionally allow for only installing an operating system with configured parameters in the config file (ParametersUrl or hardcoded parameters).
+        2. Optionally collects the hardware hash using OA3Tool, including TPM information by registering the PCPKsp.dll.
+        3. Optionally uploads the hardware hash to the selected tenant's Intune Autopilot via Microsoft Graph API.
+        4. Optionally waits for the Autopilot profile assignment to complete.
         5. Optionally downloads a SetupComplete.ps1 script and saves it to the appropriate location in the WinPE environment where it later will be copied to be executed before OOBE.
         6. Optionally downloads a tenant configuration JSON file, allowing for dynamic configuration without modifying the script.
-        7. Supports retrieving the multitenant enterprise app secret from Azure Key Vault for enhanced security when allowing the keyvault to only be accessed from a trusted public IP address.
-.PARAMETER GroupTag
-    Conditionally required. Set this parameter for tenants that don't have a GroupTag property in the config file (ParametersUrl or hardcoded parameters). The GroupTag value in the config will overwrite this value.
-.PARAMETER UploadToAutopilot
-    Optional. Indicates whether to upload the device to Autopilot. Default is $false.
+        7. Supports retrieving the (multi-tenant) enterprise app secret from Azure Key Vault for enhanced security when allowing the keyvault to only be accessed from a trusted public IP address.
 .PARAMETER AppId
     Required. The app registration ID for authentication. This is the AppID of the multitenant Entra ID enterprise app.
+.PARAMETER UploadToAutopilot
+    Conditionally required. Set this switch to $true or $false to enable or $false to disable the Autopilot upload functionality. This will be overridden by the tenant-specific value if specified.
+.PARAMETER GroupTag
+    Conditionally required. Set this parameter for tenants that don't have a GroupTag property in the config file (ParametersUrl or hardcoded parameters).
 .PARAMETER KeyVault
     Optional. Indicates whether to retrieve the AppSecret from an Azure Key Vault.
 .PARAMETER AppSecret
@@ -33,39 +33,39 @@
 .PARAMETER SecretName
     Conditionally required. The name of the secret in Azure Key Vault that contains the app secret. Required if Key Vault retrieval is enabled ($KeyVault = $true).
 .PARAMETER SetupCompleteUrl
-    Optional. A URL to download a SetupComplete.ps1 script. This script will be copied to the WinPE image and will run during the SetupComplete phase before OOBE.
+    Optional. A URL to download a SetupComplete.ps1 script. This script will be copied to the WinPE image and will run during the SetupComplete phase before OOBE. Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/SetupComplete/SetupComplete.ps1
 .PARAMETER ParametersUrl
-    Optional. If provided, the script will read tenant information from the downloaded JSON instead of using hardcoded tenant parameters inside this script.
+    Optional. If provided, the script will read tenant information from the downloaded JSON instead of using hardcoded tenant parameters inside this script. Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/config.json
 .NOTES
     File Name   : TenantSelectorAutopilotHashUpload.ps1
     Author      : https://github.com/MEMthusiast
-    Version     : 2.05
+    Version     : 3.00
     Purpose     : Upload device hashes to selected tenant's Autopilot.
-    Requires    : OSDCloud, a multi-tenant Entra ID enterprise app in each customer tenant, and optionally an Azure Key Vault for secret retrieval and hosting the SetupComplete.ps1 and config.json files in an Azure Blob that is only accessable from a trusted public IP address.
-    References  : Autopilot upload logic based on: https://github.com/blawal/WinPEAP
-    Usage       : Can be used as a standalone script but used best in combiantion with OSDCloud. This is automatically executed as part of the OSDCloud process. Customize parameters as needed before deployment.
+    Requires    : The OSDCloud PowerShell module, a multi-tenant Entra ID enterprise application in each tenant, and optionally an Azure Key Vault for secret retrieval, along with hosting the SetupComplete.ps1 and config.json files in an Azure Blob (that is only accessible from a trusted public IP address).
+    References  : Autopilot upload logic in this script is based on: https://github.com/blawal/WinPEAP
+    Usage       : Could be used as a standalone script (with some modifications) but used best in combination with OSDCloud. This is automatically executed as part of the OSDCloud process. Customize parameters as needed before deployment.
 #>
 
 #region: Required Parameters
-    $UploadToAutopilot  = $true     # Set to $false to disable Autopilot upload, or $true to enable the upload step
-    $AppId              = ""        # The app ID of the multitenant Entra ID app registration.
-    $KeyVault           = $true     # Set to $false to skip Key Vault retrieval and use hardcoded $AppSecret. Set to $true to use Key Vault.
+    $AppId              = ""
 #endregion
 
 #region: Conditionally Required Parameters
-    $GroupTag           = ""    # Use this for tenants that don't have a GroupTag property in the config file (ParametersUrl or hardcoded parameters).
-    $AppSecret          = ""    # Use this when not using Key Vault for secret retrieval.
+    $UploadToAutopilot  = $true
+    $GroupTag           = ""
+    $AppSecret          = ""
 #endregion
 
 #region: Optional Parameters
-    $SPNAppID           = ""    # The app ID for authentication to Key Vault.
-    $SPNSecret          = ""    # The app secret for authentication to Key Vault.
-    $SPNTenantID        = ""    # The tenant ID for authentication to Key Vault.
-    $VaultName          = ""    # Name of your Key Vault
-    $SecretName         = ""    # Name of the secret to retrieve
-    $SetupCompleteUrl   = ""    # Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/SetupComplete/SetupComplete.ps1
-    $ParametersUrl      = ""    # Example: https://raw.githubusercontent.com/MEMthusiast/Intune-Autopilot-MultiTenant/refs/heads/main/config.json
+    $SPNAppID           = ""
+    $SPNSecret          = ""
+    $SPNTenantID        = ""
+    $VaultName          = ""
+    $SecretName         = ""
+    $SetupCompleteUrl   = ""
+    $ParametersUrl      = ""
 #endregion
+
 
 #region: Start Logging
     # Start transcript
@@ -78,8 +78,8 @@
 #endregion
 
 #region: Test internet connectity
-    if ($KeyVault -or $SetupCompleteUrl -or $ParametersUrl) {
-        Write-Host "`nInternet connectivity is required. Checking connection..." -ForegroundColor Cyan
+    if ($SPNSecret -or $SetupCompleteUrl -or $ParametersUrl -or $UploadToAutopilot) {
+        Write-Host "Internet connectivity is required. Checking connection..." -ForegroundColor Cyan
 
         $RetryInterval = 10
         $firstAttempt = $true
@@ -88,12 +88,12 @@
             try {
                 # Test internet connectivity
                 Invoke-WebRequest -Uri "https://www.microsoft.com/" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null
-                Write-Host "`nInternet connection detected. Continuing script..." -ForegroundColor Green
+                Write-Host "Internet connection detected. Continuing script..." -ForegroundColor Green
                 break
             }
             catch {
                 if ($firstAttempt) {
-                    Write-Host "`nNo internet connection detected." -ForegroundColor Yellow
+                    Write-Host "No internet connection detected." -ForegroundColor Yellow
                     Write-Host "Please connect the device to the network." -ForegroundColor Yellow
                     $firstAttempt = $false
                 }
@@ -111,7 +111,7 @@
     }
     else {
         Write-Host "No internet-dependent parameters configured." -ForegroundColor Cyan
-        Write-Host "Continuing without internet connectivity. Script functionality may be limited." -ForegroundColor Yellow
+        Write-Host "Continuing without internet connectivity. Script functionality may be limited." -ForegroundColor DarkRed
     }
     # Get public IP address
     try {
@@ -119,59 +119,7 @@
         } catch {} 
 #endregion
 
-#region: Key Vault
-    if ($KeyVault) {
-
-    try {
-        # Get token for Key Vault
-        Write-Host "Requesting Key Vault token..." -ForegroundColor Yellow
-
-        $tokenResponse = Invoke-RestMethod -Method Post `
-            -Uri "https://login.microsoftonline.com/$SPNTenantID/oauth2/v2.0/token" `
-            -Body @{
-                client_id     = $SPNAppID
-                client_secret = $SPNSecret
-                scope         = "https://vault.azure.net/.default"
-                grant_type    = "client_credentials"
-            } `
-            -ContentType "application/x-www-form-urlencoded"
-
-        $accessToken = $tokenResponse.access_token
-
-        $uri = "https://$VaultName.vault.azure.net/secrets/$SecretName/?api-version=7.3"
-
-        Write-Host "Calling Key Vault from public IP: $publicIP" -ForegroundColor Cyan
-
-        # Call Key Vault
-        $response = Invoke-RestMethod -Method Get `
-            -Uri $uri `
-            -Headers @{
-                Authorization = "Bearer $accessToken"
-            }
-
-        Write-Host "Secret retrieved successfully." -ForegroundColor Green
-        $AppSecret = $response.value
-    }
-    catch {
-        Write-Host "Key Vault error:" -ForegroundColor Red
-        Write-Host $_ -ForegroundColor Red
-
-        if ($_.Exception.Response) {
-            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-            $reader.BaseStream.Position = 0
-            $reader.DiscardBufferedData()
-            $body = $reader.ReadToEnd()
-            Write-Host "Response body:" -ForegroundColor DarkRed
-            Write-Host $body -ForegroundColor DarkRed
-        }
-
-        throw
-    }
- 
-    }
-#endregion
-
-#region: Injected Parameters
+#region: Injected Tenant Parameters
     # If ParametersUrl is provided, read tenant information from the config file instead of using hardcoded parameters. This allows for dynamic configuration without modifying the script.
 
     if (-not [string]::IsNullOrWhiteSpace($ParametersUrl)) {
@@ -202,7 +150,7 @@
 
     }
     else {
-        Write-Host "ParameterUrl not provided. Using hardcoded parameters." -ForegroundColor Yellow
+        Write-Host "ParametersUrl not provided. Using hardcoded parameters." -ForegroundColor Yellow
     }
 #endregion
 
@@ -215,20 +163,40 @@
     @{
         Name = "Tenant 1"
         TenantId = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-        GroupTag = "AP-Tenant1"
+        UploadToAutopilot = $true
+        GroupTag = "TENANT1"
+        OSBuild = "25H2"
+        OSEdition = "Pro"
+        OSVersion = "Windows 11"
+        OSLanguage = "nl-nl"
+        OSActivation = "Volume"
     },
     @{
         Name = "Tenant 2"
         TenantId = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+        UploadToAutopilot = $true
+        GroupTag = "TENANT2"
+        OSBuild = "25H2"
+        OSEdition = "Pro"
+        OSVersion = "Windows 11"
+        OSLanguage = "en-us"
+        OSActivation = "Volume"
     },
     @{
-        Name = "Tenant 3"
+        Name = "Windows 11 Pro - 25H2 - NL"
         TenantId = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+        UploadToAutopilot = $false
+        GroupTag = ""
+        OSBuild = "25H2"
+        OSEdition = "Pro"
+        OSVersion = "Windows 11"
+        OSLanguage = "nl-nl"
+        OSActivation = "Volume"
     }
         )
     }
     else {
-        Write-Host "ParametersUrl provided. Skipping hardcoded parameters and using injected parameters." -ForegroundColor Yellow
+        Write-Host "ParametersUrl provided. Skipping hardcoded parameters and using downloaded config file." -ForegroundColor Yellow
     }
 #endregion
 
@@ -255,13 +223,19 @@
     $dropdown.DropDownStyle = "DropDownList"
     $form.Controls.Add($dropdown)
 
-    # Convert all tenants to PSCustomObjects
+    # Convert all variables to PSCustomObjects
     $TenantObjects = $Tenants | ForEach-Object {
         if ($_ -is [hashtable]) {
             [PSCustomObject]@{
-                Name     = $_.Name
-                TenantId = $_.TenantId
-                GroupTag = $_.GroupTag
+            Name              = $_.Name
+            TenantId          = $_.TenantId
+            UploadToAutopilot = $_.UploadToAutopilot
+            GroupTag          = $_.GroupTag
+            OSVersion         = $_.OSVersion
+            OSEdition         = $_.OSEdition
+            OSBuild           = $_.OSBuild
+            OSLanguage        = $_.OSLanguage
+            OSActivation      = $_.OSActivation
             }
         } else {
             $_
@@ -313,31 +287,89 @@
 
     $button.Add_Click({
         if (!$dropdown.SelectedItem) {
-            [System.Windows.Forms.MessageBox]::Show("Select a tenant")
+            [System.Windows.Forms.MessageBox]::Show("Select a tenant / deployment profile")
             return
         }
 
         $SelectedTenant = $dropdown.SelectedItem
 
-        # Set only tenant-related variables
-        $script:TenantId   = $SelectedTenant.TenantId
-        $script:TenantName = $SelectedTenant.Name
+        $script:TenantId            = $SelectedTenant.TenantId
+        $script:TenantName          = $SelectedTenant.Name
+        $script:UploadToAutopilot   = [bool]$SelectedTenant.UploadToAutopilot
+        $script:OSVersion           = $SelectedTenant.OSVersion
+        $script:OSEdition           = $SelectedTenant.OSEdition
+        $script:OSBuild             = $SelectedTenant.OSBuild
+        $script:OSLanguage          = $SelectedTenant.OSLanguage
+        $script:OSActivation        = $SelectedTenant.OSActivation
 
-        # Only override the default GroupTag if the tenant has one filled in
+        # Keep global fallback GroupTag unless tenant-specific value is filled in
         if (-not [string]::IsNullOrWhiteSpace($SelectedTenant.GroupTag)) {
             $script:GroupTag = $SelectedTenant.GroupTag
         }
 
         $form.Close()
     })
-
     # Show the form
-    $form.ShowDialog()
+    [void]$form.ShowDialog()
 
-    Write-Host "Selected Tenant: $TenantName" -ForegroundColor Green
+    Write-Host "Selected tenant: $TenantName" -ForegroundColor Green
+#endregion
+
+#region: Key Vault
+    if ([string]::IsNullOrWhiteSpace($AppSecret) -and $UploadToAutopilot -eq $true) {
+
+    try {
+        # Get token for Key Vault
+        Write-Host "Requesting Key Vault token..." -ForegroundColor Yellow
+
+        $tokenResponse = Invoke-RestMethod -Method Post `
+            -Uri "https://login.microsoftonline.com/$SPNTenantID/oauth2/v2.0/token" `
+            -Body @{
+                client_id     = $SPNAppID
+                client_secret = $SPNSecret
+                scope         = "https://vault.azure.net/.default"
+                grant_type    = "client_credentials"
+            } `
+            -ContentType "application/x-www-form-urlencoded"
+
+        $accessToken = $tokenResponse.access_token
+
+        $uri = "https://$VaultName.vault.azure.net/secrets/$SecretName/?api-version=7.3"
+
+        Write-Host "Calling Key Vault from public IP: $publicIP" -ForegroundColor Cyan
+
+        # Call Key Vault
+        $response = Invoke-RestMethod -Method Get `
+            -Uri $uri `
+            -Headers @{
+                Authorization = "Bearer $accessToken"
+            }
+
+        Write-Host "Secret retrieved successfully." -ForegroundColor Green
+        $AppSecret = $response.value
+    }
+    catch {
+        Write-Host "Key Vault error:" -ForegroundColor Red
+        Write-Host $_ -ForegroundColor Red
+
+        if ($_.Exception.Response) {
+            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+            $reader.BaseStream.Position = 0
+            $reader.DiscardBufferedData()
+            $body = $reader.ReadToEnd()
+            Write-Host "Response body:" -ForegroundColor DarkRed
+            Write-Host $body -ForegroundColor DarkRed
+        }
+
+        throw
+    }
+ 
+    }
 #endregion
 
 #region: Autopilot Upload
+        if ($UploadToAutopilot)
+        {
     # Functions for Autopilot API operations
     function Get-AuthToken {
         [CmdletBinding()]
@@ -541,7 +573,7 @@
         Write-Host "Hardware Hash length: $(($hash).Length) characters" -ForegroundColor Cyan
 
         # Create temporary CSV file in case it's needed
-        $TempCSVPath = "X:\OSDCloud\Config\Scripts\SetupComplete\AutopilotHash.csv"
+        $TempCSVPath = "X:\Windows\Temp\AutopilotHash.csv"
 
         # Create the CSV object
         $computers = @()
@@ -591,8 +623,7 @@
         $uploadSucceeded = $false
         $deviceAlreadyExists = $false
 
-        if ($UploadToAutopilot)
-        {
+
             if (-not $TenantId -or -not $AppId -or -not $AppSecret)
             {
                 Write-Host "Error: TenantId, AppId, and AppSecret parameters are required for Autopilot upload" -ForegroundColor Red
@@ -743,9 +774,7 @@
     }
     else
     {
-        Write-Host "No Hardware Hash found" -ForegroundColor Red
-        Pop-Location
-        exit 1
+        Write-Host "Autopilot upload is disabled." -ForegroundColor Yellow
     }
 #endregion
 
@@ -767,7 +796,7 @@
 
             Invoke-WebRequest -Uri $SetupCompleteUrl -OutFile $DestinationFile -UseBasicParsing -ErrorAction Stop
 
-            Write-Host "$FileName downloaded successfully." -ForegroundColor Green
+            Write-Host "$FileName downloaded successfully to $DestinationFolder." -ForegroundColor Green
     }
     catch {
         Write-Error "Failed to download $FileName $($_.Exception.Message)" -ForegroundColor Red
@@ -776,6 +805,69 @@
     }
     else {
     Write-Host "SetupCompleteUrl not provided. Skipping SetupComplete.ps1 download." -ForegroundColor Yellow
+    }
+#endregion
+
+#region: Start OSDCloud
+    # Output deployment information before starting OSDCloud
+    Write-Host "`nDeployment Information" -ForegroundColor DarkCyan
+    Write-Host "---------------------------------------------" -ForegroundColor DarkGray
+
+    Write-Host ("{0,-18}: " -f "Tenant")    -NoNewline -ForegroundColor DarkGray
+    Write-Host $TenantName                    -ForegroundColor Yellow
+
+    Write-Host ("{0,-18}: " -f "OSEdition")    -NoNewline -ForegroundColor DarkGray
+    Write-Host $OSEdition                     -ForegroundColor Yellow
+
+    Write-Host ("{0,-18}: " -f "OSVersion")    -NoNewline -ForegroundColor DarkGray
+    Write-Host $OSVersion                     -ForegroundColor Yellow
+
+    Write-Host ("{0,-18}: " -f "OSLanguage")   -NoNewline -ForegroundColor DarkGray
+    Write-Host $OSLanguage                    -ForegroundColor Yellow
+
+    Write-Host ("{0,-18}: " -f "OSActivation") -NoNewline -ForegroundColor DarkGray
+    Write-Host $OSActivation                  -ForegroundColor Yellow
+
+    Write-Host ("{0,-18}: " -f "GroupTag")     -NoNewline -ForegroundColor DarkGray
+    Write-Host $GroupTag                      -ForegroundColor Yellow
+
+    Write-Host ("{0,-18}: " -f "Autopilot") -NoNewline -ForegroundColor DarkGray
+    if ($UploadToAutopilot) {
+        Write-Host "Uploaded"  -ForegroundColor Green
+    } else {
+        Write-Host "Not used" -ForegroundColor Yellow
+    }
+
+    Write-Host "`nStarting OSDCloud in 10 seconds..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 10
+
+    # Setting parameters from selected tenant for Start-OSDCloud.
+    $StartOSDCloudParams = @{
+        OSEdition      = $OSEdition
+        OSLanguage     = $OSLanguage
+        OSVersion      = $OSVersion
+        OSBuild        = $OSBuild    
+        OSActivation   = $OSActivation
+        ZTI            = $true
+        Restart        = $true
+        SkipAutopilot  = $true
+    }
+
+    try {
+        Write-Host "Now launching Start-OSDCloud..." -ForegroundColor Yellow
+        Start-OSDCloud @StartOSDCloudParams -ErrorAction Stop
+    }
+    catch {
+        Write-Host "Start-OSDCloud failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Falling back to Start-OSDCloudGUI..." -ForegroundColor Yellow
+
+        try {
+            Start-OSDCloudGUI -ErrorAction Stop
+        }
+        catch {
+            Write-Host "Start-OSDCloudGUI also failed: $($_.Exception.Message)" -ForegroundColor Red
+            throw
+        }
     }
 #endregion
 
@@ -789,9 +881,3 @@
     Write-Host "Total runtime: $durationFormatted" -ForegroundColor Cyan
     Stop-Transcript
 #endregion
-
-Write-Host "Starting OSDCloud in 10 seconds..." -ForegroundColor Yellow
-Start-Sleep -Seconds 10
-
-# Return to original directory
-Pop-Location

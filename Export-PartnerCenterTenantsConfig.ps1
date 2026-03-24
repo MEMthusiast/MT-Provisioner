@@ -1,5 +1,5 @@
 # Output file
-$outputFile = ".\config.json"
+$outputFile = ".\TenantsConfig.json"
 
 # Connect to Partner Center
 Connect-PartnerCenter
@@ -11,15 +11,22 @@ Write-Host "Found $($customers.Count) tenants."
 
 # Build tenant array
 $tenantList = foreach ($customer in $customers) {
-    [PSCustomObject]@{
-        Name     = $customer.Name
-        TenantId = $customer.CustomerId
-    }
+    [PSCustomObject]@{
+        Name              = $customer.Name
+        TenantId          = $customer.CustomerId
+        UploadToAutopilot = $true
+        GroupTag          = "Personal"
+        OSVersion         = "Windows 11"
+        OSBuild           = "25H2"
+        OSEdition         = "Pro"
+        OSLanguage        = "nl-nl"
+        OSActivation      = "Volume"
+    }
 }
 
 # Build final JSON structure
 $config = @{
-    Tenants = $tenantList
+    Tenants = $tenantList
 }
 
 # Export JSON
