@@ -287,7 +287,7 @@
 
     $button.Add_Click({
         if (!$dropdown.SelectedItem) {
-            [System.Windows.Forms.MessageBox]::Show("Select a tenant / deployment profile")
+            [System.Windows.Forms.MessageBox]::Show("Select a tenant or provisioning profile")
             return
         }
 
@@ -813,24 +813,24 @@
     Write-Host "`nProvisioning Information" -ForegroundColor DarkCyan
     Write-Host "---------------------------------------------" -ForegroundColor DarkGray
 
-    Write-Host ("{0,-18}: " -f "Tenant")    -NoNewline -ForegroundColor DarkGray
-    Write-Host $TenantName                    -ForegroundColor Yellow
+    Write-Host ("{0,-18}: " -f "Tenant") -NoNewline -ForegroundColor DarkGray
+    Write-Host $TenantName -ForegroundColor Yellow
 
-    Write-Host ("{0,-18}: " -f "OSEdition")    -NoNewline -ForegroundColor DarkGray
-    Write-Host $OSEdition                     -ForegroundColor Yellow
+    Write-Host ("{0,-18}: " -f "OSEdition") -NoNewline -ForegroundColor DarkGray
+    Write-Host $OSEdition -ForegroundColor Yellow
 
-    Write-Host ("{0,-18}: " -f "OSVersion")    -NoNewline -ForegroundColor DarkGray
-    Write-Host $OSVersion                     -ForegroundColor Yellow
+    Write-Host ("{0,-18}: " -f "OSVersion") -NoNewline -ForegroundColor DarkGray
+    Write-Host $OSVersion -ForegroundColor Yellow
 
-    Write-Host ("{0,-18}: " -f "OSLanguage")   -NoNewline -ForegroundColor DarkGray
-    Write-Host $OSLanguage                    -ForegroundColor Yellow
+    Write-Host ("{0,-18}: " -f "OSLanguage") -NoNewline -ForegroundColor DarkGray
+    Write-Host $OSLanguage -ForegroundColor Yellow
 
     Write-Host ("{0,-18}: " -f "OSActivation") -NoNewline -ForegroundColor DarkGray
-    Write-Host $OSActivation                  -ForegroundColor Yellow
+    Write-Host $OSActivation -ForegroundColor Yellow
 
-    Write-Host ("{0,-18}: " -f "GroupTag")     -NoNewline -ForegroundColor DarkGray
-    Write-Host $GroupTag                      -ForegroundColor Yellow
-
+    Write-Host ("{0,-18}: " -f "GroupTag") -NoNewline -ForegroundColor DarkGray
+    Write-Host $GroupTag -ForegroundColor Yellow
+    
     Write-Host ("{0,-18}: " -f "Autopilot") -NoNewline -ForegroundColor DarkGray
 
     if (-not $UploadToAutopilot) {
@@ -840,42 +840,59 @@
         Write-Host "Already uploaded" -ForegroundColor Green
     }
     elseif (-not $authSucceeded) {
-        Write-Host "Authentication not succeeded" -ForegroundColor Red
+        Write-Host "Authentication failed" -ForegroundColor Red
     }
-    elseif ($uploadSucceeded) {
-        Write-Host "Upload succeeded" -ForegroundColor Green
-    }
-    else {
+    elseif (-not $uploadSucceeded) {
         Write-Host "Upload failed" -ForegroundColor Red
     }
-    
-    # Manual confirm to continue after Autopilot error
-    if ($UploadToAutopilot -and -not $deviceAlreadyExists -and (-not $authSucceeded -or -not $uploadSucceeded)) {
-        Write-Host "`nAutopilot upload was not completed successfully." -ForegroundColor Red
-
-        if (-not $authSucceeded) {
-            Write-Host "Authentication did not succeed." -ForegroundColor Red
-        }
-        elseif (-not $uploadSucceeded) {
-            Write-Host "Upload did not succeed." -ForegroundColor Red
-        }
-
-        Write-Host "OSDCloud can continue without Autopilot." -ForegroundColor Yellow
-
-        do {
-            $continueChoice = Read-Host "Continue with OSDCloud anyway? (Y/N)"
-        } until ($continueChoice -match '^[YyNn]$')
-
-        if ($continueChoice -match '^[Nn]$') {
-            Write-Host "Chose not to continue. Exiting..." -ForegroundColor Yellow
-            return
-        }
+    elseif (-not $profileAssigned) {
+        Write-Host "Profile not assigned in allowed time" -ForegroundColor Red
     }
+    else {
+        Write-Host "Upload succeeded" -ForegroundColor Green
+    }
+
+    # Manual confirm to continue after Autopilot issue
+    if (
+        $UploadToAutopilot -and
+        -not $deviceAlreadyExists -and
+            (
+                -not $authSucceeded -or
+                -not $uploadSucceeded -or
+                -not $profileAssigned
+            )
+        ) 
+        {
+            Write-Host "`nAutopilot encountered an issue." -ForegroundColor DarkRed
+
+            if (-not $authSucceeded) {
+                Write-Host "Reason: authentication did not succeed." -ForegroundColor Red
+            }
+
+            if ($authSucceeded -and -not $uploadSucceeded) {
+                Write-Host "Reason: upload did not succeed." -ForegroundColor Red
+            }
+
+            if ($authSucceeded -and $uploadSucceeded -and -not $profileAssigned) {
+                Write-Host "Reason: profile is not assigned in the allowed time." -ForegroundColor Red
+            }
+            
+            do {
+                $continueChoice = Read-Host "Continue provisioning without Autopilot anyway? (Y/N)"
+            } until ($continueChoice -match '^[YyNn]$')
+
+            if ($continueChoice -match '^[Nn]$') {
+                Write-Host "Chose not to continue. Restarting computer in 10 seconds..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 10
+                Restart-Computer
+                Start-Sleep -Seconds 10
+            }
+        }
 
     Write-Host "`nStarting OSDCloud in 10 seconds..." -ForegroundColor Yellow
     Start-Sleep -Seconds 10
 
-    # Setting parameters from selected tenant for Start-OSDCloud.
+    # Setting parameters from the selected tenant for Start-OSDCloud.
     $StartOSDCloudParams = @{
         OSEdition      = $OSEdition
         OSLanguage     = $OSLanguage
