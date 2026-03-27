@@ -832,10 +832,44 @@
     Write-Host $GroupTag                      -ForegroundColor Yellow
 
     Write-Host ("{0,-18}: " -f "Autopilot") -NoNewline -ForegroundColor DarkGray
-    if ($UploadToAutopilot) {
-        Write-Host "Uploaded"  -ForegroundColor Green
-    } else {
+
+    if (-not $UploadToAutopilot) {
         Write-Host "Not used" -ForegroundColor Yellow
+    }
+    elseif ($deviceAlreadyExists) {
+        Write-Host "Already uploaded" -ForegroundColor Green
+    }
+    elseif (-not $authSucceeded) {
+        Write-Host "Authentication not succeeded" -ForegroundColor Red
+    }
+    elseif ($uploadSucceeded) {
+        Write-Host "Upload succeeded" -ForegroundColor Green
+    }
+    else {
+        Write-Host "Upload failed" -ForegroundColor Red
+    }
+    
+    # Manual confirm to continue after Autopilot error
+    if ($UploadToAutopilot -and -not $deviceAlreadyExists -and (-not $authSucceeded -or -not $uploadSucceeded)) {
+        Write-Host "`nAutopilot upload was not completed successfully." -ForegroundColor Red
+
+        if (-not $authSucceeded) {
+            Write-Host "Authentication did not succeed." -ForegroundColor Red
+        }
+        elseif (-not $uploadSucceeded) {
+            Write-Host "Upload did not succeed." -ForegroundColor Red
+        }
+
+        Write-Host "OSDCloud can continue without Autopilot." -ForegroundColor Yellow
+
+        do {
+            $continueChoice = Read-Host "Continue with OSDCloud anyway? (Y/N)"
+        } until ($continueChoice -match '^[YyNn]$')
+
+        if ($continueChoice -match '^[Nn]$') {
+            Write-Host "Chose not to continue. Exiting..." -ForegroundColor Yellow
+            return
+        }
     }
 
     Write-Host "`nStarting OSDCloud in 10 seconds..." -ForegroundColor Yellow
