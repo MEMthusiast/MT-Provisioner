@@ -1,4 +1,17 @@
 # Multi-Tenant Provisioner
+
+> A PowerShell-based graphical user interface build on top of OSDCloud for selecting a provisioning profile
+
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Optional prerequisites](#-Optional-prerequisites)
+- [Usage](#-Prerequisites)
+- [Tenants Configuration](#-Tenants-configuration)
+- [OSDCloud](#-OSDCloud)
+
+## Overview
+
 WinPE-compatible PowerShell tool to collect Autopilot hardware hashes, select a tenant, and register devices in Microsoft Intune with automatic profile assignment validation.
 
 This tool is designed for MSPs and to be run in combination with OSDCloud in a WinPE environment during the deployment of a Windows device.
@@ -11,7 +24,7 @@ Multi tenant app: https://learningbytesblog.com/posts/Muiltitenant-Entra-APP-for
 
 Autopilot logic used in this tool and OSDCloud USB creation based on: https://github.com/blawalt/WinPEAP
 
-## Optionally
+## Optional prerequisites
 
 * A (multi-tenant) Entra ID enterprise application in every tenant
 
@@ -22,10 +35,10 @@ Autopilot logic used in this tool and OSDCloud USB creation based on: https://gi
 
 ## Prerequisites
 
-* **Building the Tenants configuration:** Inside the Start-MTP.ps1 or with Export-TentansConfig.ps1
-    * Edit Start-MTP.ps1 and go to: **#region: Hardcoded Tenant Parameters** and fill in the parameters of every tenant you want to provision.
+* **Building the Tenants configuration:** Inside the *Start-MTP.ps1* or with *Export-TentansConfig.ps1*
+    * Edit Start-MTP.ps1 and go to: *#region: Hardcoded Tenant Parameters* and fill in the parameters of every tenant you want to provision.
 
-    If you only want to provision an OS you could set *UploadToAutopilot* to **$false** and change **Name** to for example **Windows 11 Pro**
+    If you only want to provision an OS you can set *UploadToAutopilot* to **$false** and change *Name* to for example **Windows 11 Pro**
 
     ```powershell
         Name = "Tenant 1"
@@ -38,7 +51,7 @@ Autopilot logic used in this tool and OSDCloud USB creation based on: https://gi
         OSLanguage = "nl-nl"
         OSActivation = "Volume"
     ```
-    
+    ### test
     
     
     ```powershell
