@@ -13,7 +13,7 @@ Autopilot logic used in this tool and OSDCloud USB creation based on: https://gi
 
 ## Optionally
 
-* A multi-tenant Entra ID enterprise application
+* A (multi-tenant) Entra ID enterprise application in every tenant
 
 * An Azure Key Vault
 
@@ -22,13 +22,38 @@ Autopilot logic used in this tool and OSDCloud USB creation based on: https://gi
 
 ## Prerequisites
 
-* OSDCloud PowerShell module
+* **Building the Tenants configuration:** Inside the Start-MTP.ps1 or with Export-TentansConfig.ps1
+    * Edit Start-MTP.ps1 and go to: **#region: Hardcoded Tenant Parameters** and fill in the parameters of every tenant you want to provision.
+
+    If you only want to provision an OS you could set *UploadToAutopilot* to **$false** and change **Name** to for example **Windows 11 Pro**
+
+    ```powershell
+        Name = "Tenant 1"
+        TenantId = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+        UploadToAutopilot = $true
+        GroupTag = "TENANT1"
+        OSBuild = "25H2"
+        OSEdition = "Pro"
+        OSVersion = "Windows 11"
+        OSLanguage = "nl-nl"
+        OSActivation = "Volume"
+    ```
+    
+    
+    
+    ```powershell
+    Install-Module PartnerCenter
+    ```
+
+* **OSDCloud PowerShell module**
     ```powershell
     Install-Module OSD
     ```
 * **Windows Assessment and Deployment Kit (ADK) and WinPE Add-on:** Install the Windows 10 ADK and the WinPE add-on. These provide deployment tools, including WinPE itself and the `oa3tool.exe` needed later.
     * Download link: [Windows ADK Download](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install)
     * Ensure installation of **ADK** and the **WinPE Add-on** 
+
+## Tenants Configuration
 
 ## OSDCloud
 
