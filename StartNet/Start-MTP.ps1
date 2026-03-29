@@ -219,6 +219,7 @@ else {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
+[System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
 
 # Sort tenants alphabetically
 $AllTenants = @(
@@ -306,6 +307,8 @@ $form.Size = New-Object System.Drawing.Size(700, 530)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = 'FixedDialog'
 $form.ControlBox = $false
+$form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
+$form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
 # Search
 $searchLabel = New-Object System.Windows.Forms.Label
@@ -435,6 +438,7 @@ $brandLabel.AutoSize = $true
 $brandLabel.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 13, [System.Drawing.FontStyle]::Regular)
 $brandLabel.ForeColor = $colorNormal
 $brandLabel.BackColor = [System.Drawing.Color]::Transparent
+$brandLabel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 
 # Positioning helper
 function Set-BrandLabelPosition {
