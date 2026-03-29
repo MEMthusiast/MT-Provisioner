@@ -31,7 +31,8 @@
       "OSBuild": "25H2",
       "OSEdition": "Pro",
       "OSLanguage": "nl-nl",
-      "OSActivation": "Volume"
+      "OSActivation": "Volume",
+			"Pinned": true
     }
   ]
 }

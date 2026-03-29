@@ -54,7 +54,7 @@
 .NOTES
     File Name   : Start-MTP.ps1
     Author      : https://github.com/MEMthusiast
-    Version     : 4.00
+    Version     : 4.01
     Purpose     : Upload device hashes to the selected tenant and install an operating system.
     Requires    : The OSDCloud PowerShell module, a multi-tenant Entra ID enterprise application in each tenant, and optionally an Azure Key Vault for secret retrieval, along with hosting the SetupComplete.ps1 and TenantsConfig.json files in an Azure Blob (that is only accessible from a trusted public IP address).
     References  : Autopilot upload logic in this script is based on: https://github.com/blawal/WinPEAP
@@ -206,6 +206,7 @@ if ([string]::IsNullOrWhiteSpace($ParametersUrl)) {
         OSVersion = "Windows 11"
         OSLanguage = "en-us"
         OSActivation = "Volume"
+        Pinned = $true # This tenant will be pinned to the top of the list in the UI
     }
 )
 
@@ -221,9 +222,9 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
 
-# Sort tenants alphabetically
+# Sort tenants alphabetically and pinned tenants on top
 $AllTenants = @(
-    $Tenants | Sort-Object Name
+    $Tenants | Sort-Object @{ Expression = { -not [bool]$_.Pinned } }, Name
 )
 
 # Validation Rule Engine
@@ -308,7 +309,7 @@ $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = 'FixedDialog'
 $form.ControlBox = $false
 $form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
-$form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$form.Font = New-Object System.Drawing.Font("Segoe UI", 9.5)
 
 # Search
 $searchLabel = New-Object System.Windows.Forms.Label
@@ -342,6 +343,7 @@ $list.Add_DrawItem({
 
     $item = $src.Items[$e.Index]
     $text = if ($null -ne $item) { [string]$item.Name } else { "" }
+    $text = if ([bool]$item.Pinned) { "★ " + [string]$item.Name } else { [string]$item.Name } # Add star for pinned tenants
 
     $isSelected = (($e.State -band [System.Windows.Forms.DrawItemState]::Selected) -ne 0)
 
