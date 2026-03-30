@@ -230,7 +230,6 @@ $AllTenants = @(
 # Unicode normalization for names with special characters (mojibake)
 $Tenants | ForEach-Object {
     if ($null -ne $_ -and $null -ne $_.Name) {
-        # If it contains typical mojibake patterns, re-decode as UTF-8 from Latin1 bytes
         if ($_.Name -match 'Ã.|Â.|�') {
             $_.Name = [System.Text.Encoding]::UTF8.GetString(
                 [System.Text.Encoding]::GetEncoding("ISO-8859-1").GetBytes([string]$_.Name)
@@ -240,9 +239,6 @@ $Tenants | ForEach-Object {
 }
 
 # Validation Rule Engine
-# - TenantID ERROR (blocking) when Autopilot = true + TenantID empty
-# - GroupTag warning only when TenantID has value + Autopilot true + GroupTag empty
-# - OS fields warnings defaulting to OSDCloudGUI
 $ValidationRules = @(
     @{
         Level   = "Error"
@@ -316,36 +312,60 @@ function Get-ValidationResults {
 # UI
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Tenant Selector"
-$form.Size = New-Object System.Drawing.Size(700, 530)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = 'FixedDialog'
 $form.ControlBox = $false
 $form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
-$form.Font = New-Object System.Drawing.Font("Segoe UI Light", 9.5)
+
+# DPI-aware scaling helpers
+$g = $form.CreateGraphics()
+$script:UiScale = [Math]::Max(1.0, [Math]::Min(2.0, ($g.DpiX / 96.0)))
+$g.Dispose()
+
+function S([double]$v) {
+    return [int][Math]::Round($v * $script:UiScale)
+}
+
+function SFP([double]$pt) {
+    return [float]$pt
+}
+
+$form.Font = New-Object System.Drawing.Font("Segoe UI Light", (SFP 9.5))
+$wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+
+# Base design size scaled by DPI, capped to screen
+$targetWidth  = [int][Math]::Min((S 700), ($wa.Width * 0.92))
+$targetHeight = [int][Math]::Min((S 600), ($wa.Height * 0.90))
+
+$form.MinimumSize = New-Object System.Drawing.Size((S 700), (S 600))
+$form.Size = New-Object System.Drawing.Size($targetWidth, $targetHeight)
 
 # Search
 $searchLabel = New-Object System.Windows.Forms.Label
 $searchLabel.Text = "Search"
-$searchLabel.Location = '10,10'
-$searchLabel.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$searchLabel.Location = New-Object System.Drawing.Point((S 10), (S 10))
+$searchLabel.Font = New-Object System.Drawing.Font("Segoe UI Semibold", (SFP 10))
+$searchLabel.Size = New-Object System.Drawing.Size((S 120), (S 22))
+$searchLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 
 $searchBox = New-Object System.Windows.Forms.TextBox
-$searchBox.Location = '10,30'
-$searchBox.Size = '250,22'
+$searchBox.Location = New-Object System.Drawing.Point((S 10), (S 30))
+$searchBox.Size = New-Object System.Drawing.Size((S 250), (S 22))
 
 # Tenant list
 $list = New-Object System.Windows.Forms.ListBox
-$list.Location = '10,60'
-$list.Size = '250,400'
+$list.Location = New-Object System.Drawing.Point((S 10), (S 60))
+$list.Size = New-Object System.Drawing.Size((S 250), (S 400))
 $list.DisplayMember = "Name"
 $list.IntegralHeight = $false
 $list.DrawMode = [System.Windows.Forms.DrawMode]::OwnerDrawFixed
-$list.ItemHeight = 22
+$list.ItemHeight = S 22
+$list.Font = New-Object System.Drawing.Font("Segoe UI Light", (SFP 9.5))
 
 # Colors
 $RowBackA = [System.Drawing.Color]::White
-$RowBackB = [System.Drawing.Color]::FromArgb(225, 228, 232)   # light gray
-$SelBack  = [System.Drawing.Color]::FromArgb(0, 120, 212)     # Fluent blue
+$RowBackB = [System.Drawing.Color]::FromArgb(225, 228, 232)
+$SelBack  = [System.Drawing.Color]::FromArgb(0, 120, 212)
 $SelFore  = [System.Drawing.Color]::White
 $RowFore  = [System.Drawing.Color]::Black
 
@@ -356,11 +376,10 @@ $list.Add_DrawItem({
 
     $item = $src.Items[$e.Index]
     $text = if ($null -ne $item) { [string]$item.Name } else { "" }
-    $text = if ([bool]$item.Pinned) { "★ " + [string]$item.Name } else { [string]$item.Name } # Add star for pinned tenants
+    $text = if ([bool]$item.Pinned) { "★ " + [string]$item.Name } else { [string]$item.Name }
 
     $isSelected = (($e.State -band [System.Windows.Forms.DrawItemState]::Selected) -ne 0)
 
-    # Background colors
     if ($isSelected) {
         $bg = $SelBack
         $fg = $SelFore
@@ -370,21 +389,18 @@ $list.Add_DrawItem({
         $fg = $RowFore
     }
 
-    # Paint row background
     $bgBrush = New-Object System.Drawing.SolidBrush($bg)
     $e.Graphics.FillRectangle($bgBrush, $e.Bounds)
     $bgBrush.Dispose()
 
-    # Text flags: clean + vertically centered + ellipsis
     $flags = [System.Windows.Forms.TextFormatFlags]::Left -bor
              [System.Windows.Forms.TextFormatFlags]::VerticalCenter -bor
              [System.Windows.Forms.TextFormatFlags]::EndEllipsis -bor
              [System.Windows.Forms.TextFormatFlags]::NoPrefix
 
-    # Force integer-safe rectangle values
-    $x = [int]$e.Bounds.X + 6
+    $x = [int]$e.Bounds.X + (S 6)
     $y = [int]$e.Bounds.Y
-    $w = [int]$e.Bounds.Width - 8
+    $w = [int]$e.Bounds.Width - (S 8)
     $h = [int]$e.Bounds.Height
 
     $textRect = New-Object System.Drawing.Rectangle($x, $y, $w, $h)
@@ -404,40 +420,47 @@ $list.Add_DrawItem({
 # Right headers
 $detailsHeader = New-Object System.Windows.Forms.Label
 $detailsHeader.Text = "Provisioning details"
-$detailsHeader.Location = '270,60'
-$detailsHeader.Size = '400,18'
-$detailsHeader.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$detailsHeader.Location = New-Object System.Drawing.Point((S 270), (S 60))
+$detailsHeader.Size = New-Object System.Drawing.Size((S 400), (S 26))
+$detailsHeader.Font = New-Object System.Drawing.Font("Segoe UI Semibold", (SFP 10))
+$detailsHeader.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$detailsHeader.AutoEllipsis = $true
 
 $validationHeader = New-Object System.Windows.Forms.Label
 $validationHeader.Text = "Validation"
-$validationHeader.Location = '270,270'
-$validationHeader.Size = '400,18'
-$validationHeader.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$validationHeader.Location = New-Object System.Drawing.Point((S 270), (S 270))
+$validationHeader.Size = New-Object System.Drawing.Size((S 400), (S 26))
+$validationHeader.Font = New-Object System.Drawing.Font("Segoe UI Semibold", (SFP 10))
+$validationHeader.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$validationHeader.AutoEllipsis = $true
 
 # Provisioning details panel
 $details = New-Object System.Windows.Forms.TextBox
-$details.Location = '270,80'
-$details.Size = '400,170'
+$details.Location = New-Object System.Drawing.Point((S 270), (S 80))
+$details.Size = New-Object System.Drawing.Size((S 400), (S 170))
+$details.Font = New-Object System.Drawing.Font("Consolas", (SFP 9.5))
 $details.Multiline = $true
 $details.ReadOnly = $true
-$details.Font = New-Object System.Drawing.Font('Consolas',9)
+$details.ScrollBars = 'Vertical'
+$details.WordWrap = $false
 $details.Text = "Select a tenant from the list."
 
 # Validation panel
 $validation = New-Object System.Windows.Forms.TextBox
-$validation.Location = '270,290'
-$validation.Size = '400,80'
+$validation.Location = New-Object System.Drawing.Point((S 270), (S 290))
+$validation.Size = New-Object System.Drawing.Size((S 400), (S 80))
+$validation.Font = New-Object System.Drawing.Font("Consolas", (SFP 9.5))
 $validation.Multiline = $true
 $validation.ReadOnly = $true
-$validation.Font = New-Object System.Drawing.Font('Consolas',9)
+$validation.ScrollBars = 'Vertical'
+$validation.WordWrap = $false
 
 # Start Button
 $start = New-Object System.Windows.Forms.Button
 $start.Text = "Start"
-$start.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 11, [System.Drawing.FontStyle]::Regular)
-$start.Size = New-Object System.Drawing.Size(140, 40)
+$start.Font = New-Object System.Drawing.Font("Segoe UI Semibold", (SFP 11), [System.Drawing.FontStyle]::Regular)
+$start.Size = New-Object System.Drawing.Size((S 140), (S 40))
 $start.Enabled = $false
-
 $start.FlatStyle = 'Flat'
 $start.FlatAppearance.BorderSize = 0
 $start.UseVisualStyleBackColor = $false
@@ -454,28 +477,23 @@ $start.ForeColor = [System.Drawing.Color]::White
 $brandLabel = New-Object System.Windows.Forms.Label
 $brandLabel.Text = "Multi-Tenant Provisioner"
 $brandLabel.AutoSize = $true
-$brandLabel.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 13, [System.Drawing.FontStyle]::Regular)
+$brandLabel.Font = New-Object System.Drawing.Font("Segoe UI Semibold", (SFP 13), [System.Drawing.FontStyle]::Regular)
 $brandLabel.ForeColor = $colorNormal
 $brandLabel.BackColor = [System.Drawing.Color]::Transparent
 $brandLabel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 
-# Positioning helper
 function Set-BrandLabelPosition {
-    $paddingRight = 14
-    $paddingTop   = 10
+    $paddingRight = S 14
+    $paddingTop   = S 10
     $brandLabel.Location = New-Object System.Drawing.Point(
         ([int]($form.ClientSize.Width - $brandLabel.Width - $paddingRight)),
         $paddingTop
     )
 }
 
-# Ensure it is positioned after layout
-$form.Add_Shown({ Set-BrandLabelPosition })
-$form.Add_Resize({ Set-BrandLabelPosition })
-
 # Rounded corners
 $start.Add_Paint({
-    $radius = 10
+    $radius = S 10
     $rect = New-Object System.Drawing.Rectangle(0,0,$start.Width,$start.Height)
     $path = New-Object System.Drawing.Drawing2D.GraphicsPath
     $path.AddArc($rect.X, $rect.Y, $radius, $radius, 180, 90)
@@ -518,17 +536,70 @@ $start.Add_MouseUp({
     }
 })
 
-# Place Start centered between list bottom and validation bottom
-$startX = $validation.Left + [int](($validation.Width - $start.Width) / 2)
+function Update-Layout {
+    $margin = S 10
+    $gap = S 10
+    $headerHeight = S 26
+    $topSearchLabelY = S 10
+    $topSearchBoxY = S 30
+    $contentTopY = S 60
+    $bottomPadding = S 16
+    $sectionGap = S 12
+    $headerToBoxGap = S 8
 
-# Calculate vertical midpoint between:
-# - bottom of tenant list
-# - bottom of validation box
-$gapTop    = $list.Bottom
-$gapBottom = $validation.Bottom
-$startY   = $gapTop + [int](($gapBottom - $gapTop - $start.Height) / 2)
+    # Left column width scales slightly but stays sensible
+    $leftWidth = [int][Math]::Max((S 250), [Math]::Min((S 320), ($form.ClientSize.Width * 0.36)))
+    $rightX = $margin + $leftWidth + $gap
+    $rightWidth = [int]($form.ClientSize.Width - $rightX - $margin)
 
-$start.Location = New-Object System.Drawing.Point($startX, $startY)
+    # Search
+    $searchLabel.Location = New-Object System.Drawing.Point($margin, $topSearchLabelY)
+    $searchBox.Location = New-Object System.Drawing.Point($margin, $topSearchBoxY)
+    $searchBox.Size = New-Object System.Drawing.Size($leftWidth, (S 22))
+
+    # Tenant list fills available height
+    $list.Location = New-Object System.Drawing.Point($margin, $contentTopY)
+    $list.Size = New-Object System.Drawing.Size($leftWidth, ($form.ClientSize.Height - $contentTopY - $bottomPadding))
+
+    # Right pane total vertical area
+    $rightTop = $contentTopY
+    $rightBottom = $form.ClientSize.Height - $bottomPadding
+
+    # Reserve a larger bottom action area so the button has breathing room
+    $buttonAreaHeight = [int][Math]::Max((S 120), ($form.ClientSize.Height * 0.28))
+
+    # Available height for details + validation + headers
+    $availableTextArea = $rightBottom - $rightTop - $buttonAreaHeight - ($headerHeight * 2) - ($headerToBoxGap * 2) - $sectionGap
+
+    if ($availableTextArea -lt (S 300)) { $availableTextArea = S 300 }
+
+    # Better split
+    $detailsHeight = [int]($availableTextArea * 0.62)
+    $validationHeight = [int]($availableTextArea - $detailsHeight)
+
+    # Details header + box
+    $detailsHeader.Location = New-Object System.Drawing.Point($rightX, $rightTop)
+    $detailsHeader.Size = New-Object System.Drawing.Size($rightWidth, $headerHeight)
+
+    $details.Location = New-Object System.Drawing.Point($rightX, ($detailsHeader.Bottom + $headerToBoxGap))
+    $details.Size = New-Object System.Drawing.Size($rightWidth, $detailsHeight)
+
+    # Validation header + box
+    $validationHeader.Location = New-Object System.Drawing.Point($rightX, ($details.Bottom + $sectionGap))
+    $validationHeader.Size = New-Object System.Drawing.Size($rightWidth, $headerHeight)
+
+    $validation.Location = New-Object System.Drawing.Point($rightX, ($validationHeader.Bottom + $headerToBoxGap))
+    $validation.Size = New-Object System.Drawing.Size($rightWidth, $validationHeight)
+
+    # Start button centered in the remaining space below Validation
+    $startX = $validation.Left + [int](($validation.Width - $start.Width) / 2)
+    $spaceBelowValidation = $rightBottom - $validation.Bottom
+    $startY = $validation.Bottom + [int](($spaceBelowValidation - $start.Height) / 2)
+    $start.Location = New-Object System.Drawing.Point($startX, $startY)
+
+    # Brand top-right
+    Set-BrandLabelPosition
+}
 
 # Add controls
 $form.Controls.AddRange(@(
@@ -538,8 +609,14 @@ $form.Controls.AddRange(@(
     $detailsHeader, $details,
     $validationHeader, $validation,
     $start
-
 ))
+
+# Apply layout once after controls are added
+Update-Layout
+
+# Re-apply after show / resize
+$form.Add_Shown({ Update-Layout })
+$form.Add_Resize({ Update-Layout })
 
 # Populate list helper
 function Update-TenantList {
