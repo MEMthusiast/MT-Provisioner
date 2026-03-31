@@ -344,13 +344,16 @@ $form.Size = New-Object System.Drawing.Size($targetWidth, $targetHeight)
 $searchLabel = New-Object System.Windows.Forms.Label
 $searchLabel.Text = "Search"
 $searchLabel.Location = New-Object System.Drawing.Point((S 10), (S 10))
+$searchLabel.Size = New-Object System.Drawing.Size((S 120), (S 26))
 $searchLabel.Font = New-Object System.Drawing.Font("Segoe UI Semibold", (SFP 10))
-$searchLabel.Size = New-Object System.Drawing.Size((S 120), (S 22))
 $searchLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 
 $searchBox = New-Object System.Windows.Forms.TextBox
-$searchBox.Location = New-Object System.Drawing.Point((S 10), (S 30))
-$searchBox.Size = New-Object System.Drawing.Size((S 250), (S 22))
+$searchBox.Width = S 250
+$searchBox.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$searchBox.Font = $form.Font
+$searchBox.Height = $searchBox.PreferredHeight
+$searchBox.Location = New-Object System.Drawing.Point((S 10), ($searchLabel.Bottom + (S 2)))
 
 # Tenant list
 $list = New-Object System.Windows.Forms.ListBox
@@ -541,7 +544,6 @@ function Update-Layout {
     $gap = S 10
     $headerHeight = S 26
     $topSearchLabelY = S 10
-    $topSearchBoxY = S 30
     $contentTopY = S 60
     $bottomPadding = S 16
     $sectionGap = S 12
@@ -554,9 +556,13 @@ function Update-Layout {
 
     # Search
     $searchLabel.Location = New-Object System.Drawing.Point($margin, $topSearchLabelY)
-    $searchBox.Location = New-Object System.Drawing.Point($margin, $topSearchBoxY)
-    $searchBox.Size = New-Object System.Drawing.Size($leftWidth, (S 22))
+    $searchLabel.Size = New-Object System.Drawing.Size((S 120), (S 26))
 
+    $searchBox.Location = New-Object System.Drawing.Point($margin, ($searchLabel.Bottom + (S 2)))
+    $searchBox.Width = $leftWidth
+    $searchBox.Height = $searchBox.PreferredHeight
+    $contentTopY = $searchBox.Bottom + (S 8)
+    
     # Tenant list fills available height
     $list.Location = New-Object System.Drawing.Point($margin, $contentTopY)
     $list.Size = New-Object System.Drawing.Size($leftWidth, ($form.ClientSize.Height - $contentTopY - $bottomPadding))
