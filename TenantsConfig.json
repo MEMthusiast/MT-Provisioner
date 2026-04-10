@@ -32,7 +32,8 @@
       "OSEdition": "Pro",
       "OSLanguage": "nl-nl",
       "OSActivation": "Volume",
-			"Pinned": true
+			"Pinned": true,
+      "SetupCompleteUrl": "https://raw.githubusercontent.com/MEMthusiast/MT-Provisioner/refs/heads/main/SetupComplete/SetupComplete.ps1"
     }
   ]
 }

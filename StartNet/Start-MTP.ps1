@@ -54,7 +54,7 @@
 .NOTES
     File Name   : Start-MTP.ps1
     Author      : https://github.com/MEMthusiast
-    Version     : 4.04
+    Version     : 4.05
     Purpose     : Upload device hashes to the selected tenant and install an operating system.
     Requires    : The OSDCloud PowerShell module, a multi-tenant Entra ID enterprise application in each tenant, and optionally an Azure Key Vault for secret retrieval, along with hosting the SetupComplete.ps1 and TenantsConfig.json files in an Azure Blob (that is only accessible from a trusted public IP address).
     References  : Autopilot upload logic in this script is based on: https://github.com/blawal/WinPEAP
@@ -207,6 +207,7 @@ if ([string]::IsNullOrWhiteSpace($ParametersUrl)) {
         OSLanguage = "en-us"
         OSActivation = "Volume"
         Pinned = $true # This tenant will be pinned to the top of the list in the UI
+        SetupCompleteUrl = "" # Optionally add a tenant-specific SetupComplete.ps1 URL.
     }
 )
 
@@ -666,11 +667,25 @@ $list.Add_SelectedIndexChanged({
     $t = $list.SelectedItem
     if (-not $t) { return }
 
+    $script:SetupCompleteDisplay = if (
+    ($t.PSObject.Properties.Name -contains 'SetupCompleteUrl') -and
+    (-not [string]::IsNullOrWhiteSpace([string]$t.SetupCompleteUrl))
+) {
+    "Tenant Specific"
+}
+elseif (-not [string]::IsNullOrWhiteSpace([string]$SetupCompleteUrl)) {
+    "Default"
+}
+else {
+    "Not used"
+}
+
     $details.Text = @"
 Name           : $($t.Name)
 TenantId       : $($t.TenantId)
 Autopilot      : $($t.UploadToAutopilot)
 GroupTag       : $($t.GroupTag)
+OOBEScript     : $script:SetupCompleteDisplay
 
 OSVersion      : $($t.OSVersion)
 OSEdition      : $($t.OSEdition)
@@ -703,6 +718,7 @@ $start.Add_Click({
     $script:OSActivation      = $t.OSActivation
     $script:GroupTag          = $t.GroupTag
     $script:UploadToAutopilot = [bool]$t.UploadToAutopilot
+    if ( ($t.PSObject.Properties.Name -contains 'SetupCompleteUrl') -and (-not [string]::IsNullOrWhiteSpace([string]$t.SetupCompleteUrl))) {$script:SetupCompleteUrl = [string]$t.SetupCompleteUrl}
 
     $form.Close()
 })
@@ -1192,7 +1208,7 @@ if (-not [string]::IsNullOrWhiteSpace($SetupCompleteUrl)) {
         # Download only if folder exists
             Write-Host "Downloading $FileName from public IP: $publicIP" -ForegroundColor Cyan
 
-            Invoke-WebRequest -Uri $SetupCompleteUrl -OutFile $DestinationFile -UseBasicParsing -ErrorAction Stop
+            Invoke-WebRequest -Uri $SetupCompleteUrl -OutFile "$DestinationFolder\SetupComplete.ps1" -UseBasicParsing -ErrorAction Stop
 
             Write-Host "$FileName downloaded successfully to $DestinationFolder." -ForegroundColor Green
     }
@@ -1228,6 +1244,9 @@ Write-Host $OSLanguage -ForegroundColor Yellow
 
 Write-Host ("{0,-18}: " -f "OSActivation") -NoNewline -ForegroundColor DarkGray
 Write-Host $OSActivation -ForegroundColor Yellow
+
+Write-Host ("{0,-18}: " -f "OOBEScript") -NoNewline -ForegroundColor DarkGray
+Write-Host $script:SetupCompleteDisplay -ForegroundColor Yellow
 
 Write-Host ("{0,-18}: " -f "GroupTag") -NoNewline -ForegroundColor DarkGray
 Write-Host $GroupTag -ForegroundColor Yellow
