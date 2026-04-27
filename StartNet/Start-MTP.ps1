@@ -81,19 +81,60 @@
     $ParametersUrl      = ""
 #endregion
 
-#region: Start Logging
+#region: Logging
+# Tracks whether the previous output was a separator, so Write-Separator can dedupe back-to-back separators caused by skipped if/else branches.
+$script:LastWasSeparator = $false
+
+# Write log function with current date and time
+function Write-Log {
+    param(
+        [Parameter(Mandatory)] [string] $Message,
+        [ConsoleColor] $Color = [ConsoleColor]::Gray
+    )
+
+    $stamp = (Get-Date).ToString('dd/MM/yyyy HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
+    $line = "[$stamp] $Message"
+
+    Write-Host $line -ForegroundColor $Color
+    $script:LastWasSeparator = $false
+}
+
+# Plain (non-timestamped) line — used for formatted summary output. Resets the separator flag so a following Write-Separator will still print.
+function Write-Plain {
+    param(
+        [string] $Text = "",
+        [ConsoleColor] $Color = [ConsoleColor]::Gray
+    )
+    Write-Host $Text -ForegroundColor $Color
+    $script:LastWasSeparator = $false
+}
+
+# Print a horizontal separator line. Skips itself if the previous output was already a separator.
+function Write-Separator {
+    param(
+        [ValidateSet('=','-')] [string] $Char = '=',
+        [int] $Length = 70,
+        [ConsoleColor] $Color = [ConsoleColor]::DarkGray
+    )
+    if ($script:LastWasSeparator) { return }
+    Write-Host ($Char * $Length) -ForegroundColor $Color
+    $script:LastWasSeparator = $true
+}
+
 # Start transcript
-$Global:Transcript = "$((Get-Date).ToString('dd-MM-yyyy-HHmmss'))-Start-MTP.log"
+$Global:Transcript = "$(Get-Date -Format 'dd-MM-yyyy_HHmmss')-Start-MTP.log"
 Start-Transcript -Path (Join-Path "X:\OSDCloud\Config\Scripts\SetupComplete" $Global:Transcript) -ErrorAction Ignore
+$script:TranscriptActive = $true
 
 # Start timer
 $startTime = Get-Date
-Write-Host "Multi-Tenant Provisioner started at: $($startTime.ToString('dd-MM-yyyy-HHmmss'))" -ForegroundColor Yellow
+Write-Log "Multi-Tenant Provisioner Started" DarkMagenta
 #endregion
 
 #region: Test internet connectity
+Write-Separator
 if ($SPNSecret -or $SetupCompleteUrl -or $ParametersUrl -or $UploadToAutopilot) {
-    Write-Host "Internet connectivity is required. Checking connection..." -ForegroundColor Cyan
+    Write-Log "Internet connectivity is required. Checking connection..." Cyan
 
     $RetryInterval = 10
     $firstAttempt = $true
@@ -102,30 +143,25 @@ if ($SPNSecret -or $SetupCompleteUrl -or $ParametersUrl -or $UploadToAutopilot) 
         try {
             # Test internet connectivity
             Invoke-WebRequest -Uri "https://www.microsoft.com/" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null
-            Write-Host "Internet connection detected. Continuing script..." -ForegroundColor Green
+            Write-Log "Internet connection detected. Continuing..." Green
             break
         }
         catch {
             if ($firstAttempt) {
-                Write-Host "No internet connection detected." -ForegroundColor Yellow
-                Write-Host "Please connect the device to the network." -ForegroundColor Yellow
+                Write-Log "No internet connection detected. Retrying..." DarkRed
                 $firstAttempt = $false
             }
-
-            # Countdown
-            for ($i = $RetryInterval; $i -gt 0; $i--) {
-                Write-Host -NoNewline "`rRetrying in $i seconds..."
-                Start-Sleep -Seconds 1
-            }
-
-            # Overwrite the countdown line with "Retrying now..."
-            Write-Host -NoNewline "`rRetrying now...           " # Extra spaces to overwrite previous text
+                for ($i = $RetryInterval; $i -gt 0; $i--) {
+                    Write-Progress -Activity "Connect the device to the network to continue" -Status "Retrying in $i seconds..." -PercentComplete ((($RetryInterval - $i) / $RetryInterval) * 100)
+                    Start-Sleep -Seconds 1
+                }
+                Write-Progress -Activity "Connect the device to the network to continue" -Completed      
         }
     }
 }
 else {
-    Write-Host "No internet-dependent parameters configured." -ForegroundColor Cyan
-    Write-Host "Continuing without internet connectivity. Script functionality may be limited." -ForegroundColor DarkRed
+    Write-Log "No internet-dependent parameters configured" DarkGray
+    Write-Log "[WARNING]: Continuing without internet connectivity. Script functionality may be limited" Yellow
 }
 # Get public IP address
 try {
@@ -134,8 +170,9 @@ $publicIP = (Invoke-RestMethod -Uri "https://api.ipify.org?format=json").ip
 #endregion
 
 #region: Injected Tenant Parameters
-# If ParametersUrl is provided, read tenant information from the config file instead of using hardcoded parameters. This allows for dynamic configuration without modifying the script.
+# If ParametersUrl is provided, read tenant information from the config file instead of using hardcoded parameters.
 
+Write-Separator
 if (-not [string]::IsNullOrWhiteSpace($ParametersUrl)) {
     
 $DestinationFolder = "X:\OSDCloud\Config\Scripts\SetupComplete"
@@ -149,14 +186,14 @@ try {
     $DestinationFile = Join-Path -Path $DestinationFolder -ChildPath $FileName
 
     # Download parameter file
-    Write-Host "Downloading $FileName from public IP: $publicIP" -ForegroundColor Cyan
+    Write-Log "Downloading $FileName from public IP: $publicIP" DarkGray
 
     Invoke-WebRequest -Uri $ParametersUrl -OutFile $DestinationFile -UseBasicParsing -ErrorAction Stop
 
-    Write-Host "$FileName downloaded successfully to $DestinationFolder." -ForegroundColor Green
+    Write-Log "$FileName downloaded successfully" Green
 }
 catch {
-    Write-Error "Failed to download $FileName : $($_.Exception.Message)" -ForegroundColor Red
+    Write-Log "Failed to download $FileName : $($_.Exception.Message)" Red
 }
 
 $config = Get-Content "$DestinationFile" -Raw | ConvertFrom-Json
@@ -164,12 +201,12 @@ $Tenants = $config.Tenants
 
 }
 else {
-    Write-Host "ParametersUrl not provided. Using hardcoded parameters." -ForegroundColor Yellow
+    Write-Log "ParametersUrl not provided. Using hardcoded parameters" DarkGray
 }
 #endregion
 
 #region: Hardcoded Tenant Parameters
-# If ParametersUrl is not provided, use hardcoded tenant information. This is useful if you prefer to have the tenant information directly in the script.
+# If ParametersUrl is not provided, use hardcoded tenant information.
 
 if ([string]::IsNullOrWhiteSpace($ParametersUrl)) {
 
@@ -213,7 +250,7 @@ if ([string]::IsNullOrWhiteSpace($ParametersUrl)) {
 
 }
 else {
-    Write-Host "ParametersUrl provided. Skipping hardcoded parameters and using downloaded config file." -ForegroundColor Yellow
+    Write-Log "ParametersUrl provided. Using downloaded config file" DarkGray
 }
 #endregion
 
@@ -231,7 +268,7 @@ $AllTenants = @(
 # Unicode normalization for names with special characters (mojibake)
 $Tenants | ForEach-Object {
     if ($null -ne $_ -and $null -ne $_.Name) {
-        if ($_.Name -match 'Ã.|Â.|�') {
+        if ($_.Name -match 'Ã.|Â.| ') {
             $_.Name = [System.Text.Encoding]::UTF8.GetString(
                 [System.Text.Encoding]::GetEncoding("ISO-8859-1").GetBytes([string]$_.Name)
             )
@@ -667,7 +704,7 @@ $list.Add_SelectedIndexChanged({
     $t = $list.SelectedItem
     if (-not $t) { return }
 
-    $script:SetupCompleteDisplay = if (
+$script:SetupCompleteDisplay = if (
     ($t.PSObject.Properties.Name -contains 'SetupCompleteUrl') -and
     (-not [string]::IsNullOrWhiteSpace([string]$t.SetupCompleteUrl))
 ) {
@@ -685,7 +722,7 @@ Name           : $($t.Name)
 TenantId       : $($t.TenantId)
 Autopilot      : $($t.UploadToAutopilot)
 GroupTag       : $($t.GroupTag)
-OOBEScript     : $script:SetupCompleteDisplay
+PreOOBEScript  : $script:SetupCompleteDisplay
 
 OSVersion      : $($t.OSVersion)
 OSEdition      : $($t.OSEdition)
@@ -724,17 +761,20 @@ $start.Add_Click({
 })
 
 # Run
-Write-Host "Starting Tenant Selector..." -ForegroundColor Cyan
+Write-Separator
+Write-Log "Starting Tenant Selector..." Cyan
 [void]$form.ShowDialog()
-Write-Host "Tenant selected continuing script.." -ForegroundColor Green
+Write-Log "Tenant selected continuing..." Green
+Write-Separator
 #endregion
 
 #region: Key Vault
 if ([string]::IsNullOrWhiteSpace($AppSecret) -and $UploadToAutopilot -eq $true) {
 
+Write-Separator
 try {
     # Get token for Key Vault
-    Write-Host "Requesting Key Vault token..." -ForegroundColor Yellow
+    Write-Log "Requesting Key Vault token..." DarkGray
 
     $tokenResponse = Invoke-RestMethod -Method Post `
         -Uri "https://login.microsoftonline.com/$SPNTenantID/oauth2/v2.0/token" `
@@ -750,7 +790,7 @@ try {
 
     $uri = "https://$VaultName.vault.azure.net/secrets/$SecretName/?api-version=7.3"
 
-    Write-Host "Calling Key Vault from public IP: $publicIP" -ForegroundColor Cyan
+    Write-Log "Calling Key Vault from public IP: $publicIP" DarkGray
 
     # Call Key Vault
     $response = Invoke-RestMethod -Method Get `
@@ -759,20 +799,20 @@ try {
             Authorization = "Bearer $accessToken"
         }
 
-    Write-Host "Secret retrieved successfully." -ForegroundColor Green
+    Write-Log "Secret retrieved successfully" Green
     $AppSecret = $response.value
 }
 catch {
-    Write-Host "Key Vault error:" -ForegroundColor Red
-    Write-Host $_ -ForegroundColor Red
+    Write-Log "Key Vault error:" Red
+    Write-Log $_ Red
 
     if ($_.Exception.Response) {
         $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
         $reader.BaseStream.Position = 0
         $reader.DiscardBufferedData()
         $body = $reader.ReadToEnd()
-        Write-Host "Response body:" -ForegroundColor DarkRed
-        Write-Host $body -ForegroundColor DarkRed
+        Write-Log "Response body:" DarkRed
+        Write-Log $body DarkRed
     }
 
     throw
@@ -782,6 +822,7 @@ catch {
 #endregion
 
 #region: Autopilot Upload
+Write-Separator
     if ($UploadToAutopilot)
     {
 # Functions for Autopilot API operations
@@ -808,14 +849,14 @@ function Get-AuthToken {
         return $response.access_token
     }
     catch {
-        Write-Host "Error getting auth token: $_" -ForegroundColor Red
+        Write-Log "Error getting auth token: $_" Red
         if ($_.Exception.Response) {
             $errorResponse = $_.Exception.Response.GetResponseStream()
             $reader = New-Object System.IO.StreamReader($errorResponse)
             $reader.BaseStream.Position = 0
             $reader.DiscardBufferedData()
             $responseBody = $reader.ReadToEnd()
-            Write-Host $responseBody -ForegroundColor Red
+            Write-Log $responseBody Red
         }
         throw
     }
@@ -852,7 +893,7 @@ function Add-AutopilotImportedDevice {
         }
 
         # Upload to Autopilot using the importedWindowsAutopilotDeviceIdentities endpoint
-        Write-Host "Uploading device to Autopilot..." -ForegroundColor Yellow
+        Write-Log "Uploading device to Autopilot..." DarkGray
         $response = Invoke-RestMethod -Method Post `
             -Uri "https://graph.microsoft.com/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities" `
             -Headers $headers `
@@ -861,14 +902,14 @@ function Add-AutopilotImportedDevice {
         return $response
     }
     catch {
-        Write-Host "Error adding device to Autopilot: $_" -ForegroundColor Red
+        Write-Log "Error adding device to Autopilot: $_" Red
         if ($_.Exception.Response) {
             $errorResponse = $_.Exception.Response.GetResponseStream()
             $reader = New-Object System.IO.StreamReader($errorResponse)
             $reader.BaseStream.Position = 0
             $reader.DiscardBufferedData()
             $responseBody = $reader.ReadToEnd()
-            Write-Host $responseBody -ForegroundColor Red
+            Write-Log $responseBody Red
         }
         throw
     }
@@ -896,14 +937,14 @@ function Get-AutopilotImportedDevice {
         return $response
     }
     catch {
-        Write-Host "Error getting device status: $_" -ForegroundColor Red
+        Write-Log "Error getting device status: $_" Red
         if ($_.Exception.Response) {
             $errorResponse = $_.Exception.Response.GetResponseStream()
             $reader = New-Object System.IO.StreamReader($errorResponse)
             $reader.BaseStream.Position = 0
             $reader.DiscardBufferedData()
             $responseBody = $reader.ReadToEnd()
-            Write-Host $responseBody -ForegroundColor Red
+            Write-Log $responseBody Red
         }
         throw
     }
@@ -931,14 +972,14 @@ function Get-AutopilotDevice {
         return $device
     }
     catch {
-        Write-Host "Error getting device status: $_" -ForegroundColor Red
+        Write-Log "Error getting device status: $_" Red
         if ($_.Exception.Response) {
             $errorResponse = $_.Exception.Response.GetResponseStream()
             $reader = New-Object System.IO.StreamReader($errorResponse)
             $reader.BaseStream.Position = 0
             $reader.DiscardBufferedData()
             $responseBody = $reader.ReadToEnd()
-            Write-Host $responseBody -ForegroundColor Red
+            Write-Log $responseBody Red
         }
         throw
     }
@@ -947,7 +988,7 @@ function Get-AutopilotDevice {
 # Check if we're in WinPE and have the required PCPKsp.dll file
 If ((Test-Path X:\Windows\System32\wpeutil.exe) -and (Test-Path $PSScriptRoot\PCPKsp.dll))
 {
-    Write-Host "Running in WinPE, installing PCPKsp.dll for TPM support..." -ForegroundColor Yellow
+    Write-Log "Running in WinPE, installing PCPKsp.dll for TPM support..." DarkGray
     Copy-Item "$PSScriptRoot\PCPKsp.dll" "X:\Windows\System32\PCPKsp.dll"
     # Register PCPKsp
     rundll32 X:\Windows\System32\PCPKsp.dll,DllInstall
@@ -964,10 +1005,10 @@ if (Test-Path $PSScriptRoot\OA3.xml)
 
 # Get SN from WMI
 $serial = (Get-WmiObject -Class Win32_BIOS).SerialNumber
-Write-Host "Device Serial Number: $serial" -ForegroundColor Cyan
+Write-Log "Device Serial Number: $serial" DarkGray
 
 # Run OA3Tool
-Write-Host "Running OA3Tool to gather hardware hash..." -ForegroundColor Green
+Write-Log "Running OA3Tool to gather hardware hash..." DarkGray
 &$PSScriptRoot\oa3tool.exe /Report /ConfigFile=$PSScriptRoot\OA3.cfg /NoKeyCheck
 
 # Check if Hash was found
@@ -976,15 +1017,15 @@ If (Test-Path $PSScriptRoot\OA3.xml)
     # Read Hash from generated XML File
     [xml]$xmlhash = Get-Content -Path "$PSScriptRoot\OA3.xml"
     $hash = $xmlhash.Key.HardwareHash
-    Write-Host "Hardware Hash successfully retrieved" -ForegroundColor Green
+    Write-Log "Hardware Hash successfully retrieved" Green
 
     # Delete XML File
     Remove-Item $PSScriptRoot\OA3.xml -Force
 
     # Output the hash information to screen
-    Write-Host "Serial Number: $serial" -ForegroundColor Cyan
-    Write-Host "Group Tag: $GroupTag" -ForegroundColor Cyan
-    Write-Host "Hardware Hash length: $(($hash).Length) characters" -ForegroundColor Cyan
+    Write-Log "Serial Number: $serial" DarkGray
+    Write-Log "Group Tag: $GroupTag" DarkGray
+    Write-Log "Hardware Hash length: $(($hash).Length) characters" DarkGray
 
     # Create temporary CSV file in case it's needed
     $TempCSVPath = "X:\Windows\Temp\AutopilotHash.csv"
@@ -1029,7 +1070,7 @@ If (Test-Path $PSScriptRoot\OA3.xml)
             Out-File $TempCSVPath
     }
 
-    Write-Host "CSV file created at: $TempCSVPath" -ForegroundColor Green
+    Write-Log "CSV file created at: $TempCSVPath" DarkGray
 
     # Upload to Autopilot if requested
     $authToken = $null
@@ -1040,14 +1081,14 @@ If (Test-Path $PSScriptRoot\OA3.xml)
 
         if (-not $TenantId -or -not $AppId -or -not $AppSecret)
         {
-            Write-Host "Error: TenantId, AppId, and AppSecret parameters are required for Autopilot upload" -ForegroundColor Red
+            Write-Log "Error: TenantId, AppId, and AppSecret parameters are required for Autopilot upload" Red
         }
         else
         {
             try
             {
                 # Get auth token
-                Write-Host "Getting authorization token..." -ForegroundColor Yellow
+                Write-Log "Getting authorization token..." DarkGray
                 $authToken = Get-AuthToken -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret
                 $authSucceeded = $true
 
@@ -1056,69 +1097,91 @@ If (Test-Path $PSScriptRoot\OA3.xml)
                 if ($existingDevice)
                 {
                     $deviceAlreadyExists = $true
-                    Write-Host "Device already exists in Autopilot with SerialNumber: $serial" -ForegroundColor Green
-                    Write-Host "Skipping upload and profile assignment check." -ForegroundColor Yellow
+                    Write-Log "Device already exists in Autopilot with SerialNumber: $serial" Green
+                    Write-Log "Skipping upload and profile assignment check." DarkGray
                 }
                 else
                 {
                     # Upload device to Autopilot
-                    Write-Host "Adding device to Autopilot..." -ForegroundColor Yellow
+                    Write-Log "Adding device to Autopilot..." DarkGray
                     $importedDevice = Add-AutopilotImportedDevice -SerialNumber $serial -HardwareHash $hash -GroupTag $GroupTag -AuthToken $authToken
 
                     if ($importedDevice)
                     {
-                        Write-Host "Device added successfully with ID: $($importedDevice.id)" -ForegroundColor Green
+                        Write-Log "Device added successfully with ID: $($importedDevice.id)" Green
 
                         # Wait for import processing to complete
-                        Write-Host "Waiting for import to complete..." -ForegroundColor Yellow
+                        Write-Log "Waiting for import to complete..." DarkGray
                         $processingComplete = $false
-                        $maxRetries = 20
-                        $retryCount = 0
+                        $maxRetries       = 20
+                        $retryCount       = 0
+                        $lastStatus       = $null
+                        $pollInterval     = 15
+                        $progressActivity = "Waiting for Autopilot import"
 
                         while (-not $processingComplete -and $retryCount -lt $maxRetries)
                         {
-                            Start-Sleep -Seconds 15
-                            $device = Get-AutopilotImportedDevice -Id $importedDevice.id -AuthToken $authToken
-
-                            if ($device.state.deviceImportStatus -eq "complete")
+                            # Countdown bar between polls
+                            for ($i = $pollInterval; $i -gt 0; $i--)
                             {
-                                $processingComplete = $true
-                                $uploadSucceeded = $true
-                                Write-Host "Import completed successfully!" -ForegroundColor Green
-                                Write-Host "Device Registration ID: $($device.state.deviceRegistrationId)" -ForegroundColor Cyan
+                                $statusText = if ($lastStatus) { "Status: $lastStatus. Next check in $i seconds..." } else { "Next check in $i seconds..." }
+                                Write-Progress -Activity $progressActivity `
+                                               -Status $statusText `
+                                               -PercentComplete (($retryCount / $maxRetries) * 100)
+                                Start-Sleep -Seconds 1
                             }
-                            elseif ($device.state.deviceImportStatus -eq "error")
+
+                            $device = Get-AutopilotImportedDevice -Id $importedDevice.id -AuthToken $authToken
+                            $status = $device.state.deviceImportStatus
+
+                            if ($status -eq "complete")
                             {
-                                Write-Host "Import failed with error: $($device.state.deviceErrorCode) - $($device.state.deviceErrorName)" -ForegroundColor Red
+                                Write-Progress -Activity $progressActivity -Completed
+                                $processingComplete = $true
+                                $uploadSucceeded    = $true
+                                Write-Log "Import completed successfully!" Green
+                                Write-Log "Device Registration ID: $($device.state.deviceRegistrationId)" DarkGray
                                 break
                             }
-                            else
+                            elseif ($status -eq "error")
                             {
-                                Write-Host "Import status: $($device.state.deviceImportStatus). Waiting..." -ForegroundColor Yellow
-                                $retryCount++
+                                Write-Progress -Activity $progressActivity -Completed
+                                Write-Log "Import failed with error: $($device.state.deviceErrorCode) - $($device.state.deviceErrorName)" Red
+                                break
                             }
+
+                            # Output only when status changes
+                            if ($status -ne $lastStatus)
+                            {
+                                Write-Log "Import status: $status" DarkGray
+                                $lastStatus = $status
+                            }
+
+                            $retryCount++
                         }
+
+                        Write-Progress -Activity $progressActivity -Completed
 
                         if (-not $processingComplete)
                         {
-                            Write-Host "Import did not complete within the expected time." -ForegroundColor Yellow
+                            Write-Log "[WARNING]: Import did not complete within the expected time" Yellow
                         }
                     }
                     else
                     {
-                        Write-Host "Import request did not return a device object." -ForegroundColor Yellow
+                        Write-Log "[WARNING]: Import request did not return a device object" Yellow
                     }
                 }
             }
             catch
             {
-                Write-Host "An error occurred during the Autopilot upload process: $_" -ForegroundColor Red
+                Write-Log "An error occurred during the Autopilot upload process: $_" Red
             }
         }
     }
     else
     {
-        Write-Host "Skipping Autopilot upload. Use -UploadToAutopilot switch with required parameters to upload." -ForegroundColor Yellow
+        Write-Log "[WARNING]: Skipping Autopilot upload. Use -UploadToAutopilot switch with required parameters to upload" Yellow
     }
 
     # Only check profile assignment if:
@@ -1127,68 +1190,80 @@ If (Test-Path $PSScriptRoot\OA3.xml)
     # 3) the device did not already exist before upload
     if ($authSucceeded -and $uploadSucceeded -and -not $deviceAlreadyExists)
     {
-        Write-Host "Waiting for Autopilot profile assignment..." -ForegroundColor Yellow
-        $profileAssigned = $false
-        $maxRetries = 50
-        $retryCount = 0
+        Write-Log "Waiting for Autopilot profile assignment..." DarkGray
+        $profileAssigned  = $false
+        $maxRetries       = 50
+        $retryCount       = 0
+        $lastStatus       = $null
+        $pollInterval     = 15
+        $progressActivity = "Waiting for Autopilot profile assignment"
 
         while (-not $profileAssigned -and $retryCount -lt $maxRetries)
         {
-            Start-Sleep -Seconds 15
-            $apDevice = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
-
-            if ($apDevice)
+            # Countdown bar between polls
+            for ($i = $pollInterval; $i -gt 0; $i--)
             {
-                $status = $apDevice.deploymentProfileAssignmentStatus
-
-                if ($status -in @("assignedUnkownSyncState","assignedInSync","assignedOutOfSync"))
-                {
-                    Write-Host "Autopilot profile assigned successfully!" -ForegroundColor Green                        
-                    $profileAssigned = $true
-                }
-                elseif ($status -eq "pending")
-                {
-                    Write-Host "Profile assignment in progress..." -ForegroundColor Yellow
-                }
-                else
-                {
-                    Write-Host "Profile status: $status - waiting..." -ForegroundColor Yellow
-                }
+                $statusText = if ($lastStatus) { "Status: $lastStatus. Next check in $i seconds..." } else { "Next check in $i seconds..." }
+                Write-Progress -Activity $progressActivity `
+                               -Status $statusText `
+                               -PercentComplete (($retryCount / $maxRetries) * 100)
+                Start-Sleep -Seconds 1
             }
-            else
+
+            $apDevice = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
+            $status   = if ($apDevice) { $apDevice.deploymentProfileAssignmentStatus } else { 'notVisible' }
+
+            if ($status -in @("assignedUnkownSyncState","assignedInSync","assignedOutOfSync"))
             {
-                Write-Host "Device not yet visible in Autopilot device list..." -ForegroundColor Yellow
+                Write-Progress -Activity $progressActivity -Completed
+                Write-Log "Autopilot profile assigned successfully!" Green
+                $profileAssigned = $true
+                break
+            }
+
+            # Output only when status changes
+            if ($status -ne $lastStatus)
+            {
+                $message = switch ($status) {
+                    'notVisible' { "Device not yet visible in Autopilot device list" }
+                    'pending'    { "Profile assignment in progress" }
+                    default      { "Profile status: $status" }
+                }
+                Write-Log $message DarkGray
+                $lastStatus = $status
             }
 
             $retryCount++
         }
 
+        Write-Progress -Activity $progressActivity -Completed
+
         if (-not $profileAssigned)
         {
-            Write-Host "Autopilot profile was not assigned within expected time." -ForegroundColor Yellow
+            Write-Log "[WARNING]: Autopilot profile was not assigned within expected time." Yellow
         }
     }
     else
     {
-        Write-Host "Skipping Autopilot profile assignment check." -ForegroundColor Yellow
+        Write-Log "[WARNING]: Skipping Autopilot profile assignment check" Yellow
 
         if ($deviceAlreadyExists)
         {
-            Write-Host "Reason: device was already present in Autopilot." -ForegroundColor Yellow
+            Write-Plain "Reason: device was already present in Autopilot." Green
         }
         elseif (-not $authSucceeded)
         {
-            Write-Host "Reason: authentication did not succeed." -ForegroundColor Yellow
+            Write-Plain "Reason: authentication did not succeed." Red
         }
         elseif (-not $uploadSucceeded)
         {
-            Write-Host "Reason: upload/import did not complete successfully in this run." -ForegroundColor Yellow
+            Write-Plain "Reason: upload/import did not complete successfully in this run." Red
         }
     }
 }
 else
 {
-    Write-Host "Autopilot upload is disabled." -ForegroundColor Yellow
+    Write-Log "Autopilot upload is disabled." DarkGray
 }
 #endregion
 
@@ -1205,72 +1280,95 @@ if (-not [string]::IsNullOrWhiteSpace($SetupCompleteUrl)) {
         $FileName        = Split-Path -Path $SetupCompleteUrl -Leaf
         $DestinationFile = Join-Path -Path $DestinationFolder -ChildPath $FileName
 
-        # Download only if folder exists
-            Write-Host "Downloading $FileName from public IP: $publicIP" -ForegroundColor Cyan
+        Write-Separator
+        Write-Log "Downloading $FileName from public IP: $publicIP" DarkGray
 
-            Invoke-WebRequest -Uri $SetupCompleteUrl -OutFile "$DestinationFolder\SetupComplete.ps1" -UseBasicParsing -ErrorAction Stop
+        # Hardcode the filename to SetupComplete.ps1 to ensure OSDCloud picks it up, regardless of the original name
+        Invoke-WebRequest -Uri $SetupCompleteUrl -OutFile "$DestinationFolder\SetupComplete.ps1" -UseBasicParsing -ErrorAction Stop
 
-            Write-Host "$FileName downloaded successfully to $DestinationFolder." -ForegroundColor Green
+        Write-Log "$FileName downloaded successfully" Green
     }
     catch {
-        Write-Error "Failed to download $FileName $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Failed to download $FileName $($_.Exception.Message)" Red
     }   
 
     }
 else {
-Write-Host "SetupCompleteUrl not provided. Skipping SetupComplete.ps1 download." -ForegroundColor Yellow
+Write-Log "SetupCompleteUrl not provided. Skipping SetupComplete.ps1 download." DarkGray
 }
+Write-Separator
 #endregion
 
 #region: Start OSDCloud
 # Output provisioning details before starting OSDCloud
-Write-Host "`nProvisioning Details" -ForegroundColor DarkCyan
-Write-Host "---------------------------------------------" -ForegroundColor DarkGray
+Write-Plain "Provisioning Details" DarkCyan
+Write-Separator -Char '-'
 
-Write-Host ("{0,-18}: " -f "Tenant") -NoNewline -ForegroundColor DarkGray
-Write-Host $TenantName -ForegroundColor Yellow
+$ProvisioningDetails = [ordered]@{
+    Tenant          = [string]$TenantName
+    OSVersion       = [string]$OSVersion
+    OSEdition       = [string]$OSEdition
+    OSBuild         = [string]$OSBuild
+    OSLanguage      = [string]$OSLanguage
+    OSActivation    = [string]$OSActivation
+    PreOOBEScript   = if ([string]::IsNullOrWhiteSpace([string]$script:SetupCompleteDisplay)) { "Not Used" } else { [string]$script:SetupCompleteDisplay }
+    GroupTag        = if ([string]::IsNullOrWhiteSpace([string]$GroupTag)) { "Not Used" } else { [string]$GroupTag }
+}
 
-Write-Host ("{0,-18}: " -f "OSVersion") -NoNewline -ForegroundColor DarkGray
-Write-Host $OSVersion -ForegroundColor Yellow
+foreach ($item in $ProvisioningDetails.GetEnumerator()) {
+    $value = if ([string]::IsNullOrWhiteSpace([string]$item.Value)) {
+        "Not Set"
+    }
+    else {
+        ([string]$item.Value).Replace("`r", " ").Replace("`n", " ")
+    }
 
-Write-Host ("{0,-18}: " -f "OSEdition") -NoNewline -ForegroundColor DarkGray
-Write-Host $OSEdition -ForegroundColor Yellow
+    $line = ("{0,-14}: {1}" -f $item.Key, $value)
+    Write-Plain $line Yellow
+}
 
-Write-Host ("{0,-18}: " -f "OSLanguage") -NoNewline -ForegroundColor DarkGray
-Write-Host $OSBuild -ForegroundColor Yellow
+# Autopilot status separately
+$AutopilotStatus =
+    if (-not $UploadToAutopilot) {
+        "Not used"
+    }
+    elseif ($deviceAlreadyExists) {
+        "Already uploaded"
+    }
+    elseif (-not $authSucceeded) {
+        "Authentication failed"
+    }
+    elseif (-not $uploadSucceeded) {
+        "Upload failed"
+    }
+    elseif (-not $profileAssigned) {
+        "Profile not assigned in allowed time"
+    }
+    else {
+        "Upload succeeded"
+    }
 
-Write-Host ("{0,-18}: " -f "OSLanguage") -NoNewline -ForegroundColor DarkGray
-Write-Host $OSLanguage -ForegroundColor Yellow
-
-Write-Host ("{0,-18}: " -f "OSActivation") -NoNewline -ForegroundColor DarkGray
-Write-Host $OSActivation -ForegroundColor Yellow
-
-Write-Host ("{0,-18}: " -f "OOBEScript") -NoNewline -ForegroundColor DarkGray
-Write-Host $script:SetupCompleteDisplay -ForegroundColor Yellow
-
-Write-Host ("{0,-18}: " -f "GroupTag") -NoNewline -ForegroundColor DarkGray
-Write-Host $GroupTag -ForegroundColor Yellow
-
-Write-Host ("{0,-18}: " -f "Autopilot") -NoNewline -ForegroundColor DarkGray
+$AutopilotLine = ("{0,-14}: {1}" -f "Autopilot", $AutopilotStatus)
 
 if (-not $UploadToAutopilot) {
-    Write-Host "Not used" -ForegroundColor Yellow
+    Write-Plain $AutopilotLine Yellow
 }
 elseif ($deviceAlreadyExists) {
-    Write-Host "Already uploaded" -ForegroundColor Green
+    Write-Plain $AutopilotLine Green
 }
 elseif (-not $authSucceeded) {
-    Write-Host "Authentication failed" -ForegroundColor Red
+    Write-Plain $AutopilotLine Red
 }
 elseif (-not $uploadSucceeded) {
-    Write-Host "Upload failed" -ForegroundColor Red
+    Write-Plain $AutopilotLine Red
 }
 elseif (-not $profileAssigned) {
-    Write-Host "Profile not assigned in allowed time" -ForegroundColor Red
+    Write-Plain $AutopilotLine Red
 }
 else {
-    Write-Host "Upload succeeded" -ForegroundColor Green
+    Write-Plain $AutopilotLine Green
 }
+Write-Separator -Char '-'
 
 # Manual confirm to continue after Autopilot issue
 if (
@@ -1283,34 +1381,17 @@ if (
         )
     ) 
     {
-        Write-Host "`nAutopilot encountered an issue." -ForegroundColor DarkRed
-
-        if (-not $authSucceeded) {
-            Write-Host "Reason: authentication did not succeed." -ForegroundColor Red
-        }
-
-        if ($authSucceeded -and -not $uploadSucceeded) {
-            Write-Host "Reason: upload did not succeed." -ForegroundColor Red
-        }
-
-        if ($authSucceeded -and $uploadSucceeded -and -not $profileAssigned) {
-            Write-Host "Reason: profile is not assigned in the allowed time." -ForegroundColor Red
-        }
-        
         do {
-            $continueChoice = Read-Host "Continue provisioning without Autopilot anyway? (Y/N)"
+            $continueChoice = Read-Host "Autopilot encountered an error. Continue provisioning without Autopilot anyway? (Y/N)"
         } until ($continueChoice -match '^[YyNn]$')
 
         if ($continueChoice -match '^[Nn]$') {
-            Write-Host "Chose not to continue. Restarting computer in 10 seconds..." -ForegroundColor Yellow
+            Write-Plain "Chose not to continue. Restarting computer in 10 seconds..." DarkGray
             Start-Sleep -Seconds 10
             Restart-Computer
             Start-Sleep -Seconds 10
         }
     }
-
-Write-Host "`nStarting OSDCloud in 10 seconds..." -ForegroundColor Yellow
-Start-Sleep -Seconds 10
 
 # Setting parameters from selected tenant for Start-OSDCloud.
 $StartOSDCloudParams = @{
@@ -1325,31 +1406,54 @@ $StartOSDCloudParams = @{
 }
     
     try {
-        Write-Host "Now launching Start-OSDCloud..." -ForegroundColor Yellow            
+        # Show end/runtime lines right before handoff
+        $endTime = Get-Date
+        $duration = $endTime - $startTime 
+
+        # Duration
+        $mins = [int]$duration.TotalMinutes
+        $secs = [int]$duration.Seconds
+        $durationText = ("{0:00} minutes {1:00} seconds" -f $mins, $secs)
+
+        Write-Separator
+        Write-Plain "Multi-Tenant Provisioner Finished" Cyan
+        Write-Plain "Completed in $durationText" DarkGray
+
+        Write-Separator
+        Write-Log "Starting OSDCloud in 10 seconds..." Cyan
+        Start-Sleep -Seconds 10
+
+        # Stop MTP transcript before handing off to OSDCloud / OSDCloudGUI
+        if ($script:TranscriptActive) {
+            Write-Log "Further actions are logged by OSDCloud itself." DarkGray
+            Stop-Transcript
+            $script:TranscriptActive = $false
+        }
+        
         Update-Module -Name OSD -ErrorAction Ignore
         Start-OSDCloud @StartOSDCloudParams -ErrorAction Stop
+
     }
     catch {
-        Write-Host "Start-OSDCloud failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "Falling back to Start-OSDCloudGUI..." -ForegroundColor Yellow
+        
+        Write-Log "Start-OSDCloud failed: $($_.Exception.Message)" Red
+        Write-Log "Falling back to Start-OSDCloudGUI..." DarkGray
 
         try {
-            Start-OSDCloudGUI -ErrorAction Stop
+            Start-OSDCloudGUI -ErrorAction Stop     
         }
         catch {
-            Write-Host "Start-OSDCloudGUI also failed: $($_.Exception.Message)" -ForegroundColor Red
-            throw
+
+        Write-Log "Start-OSDCloudGUI also failed: $($_.Exception.Message)" Red
+        throw
+
         }
 }
 #endregion
 
 #region: Stop Logging
-# End timer
-$endTime = Get-Date
-$duration = $endTime - $startTime
-$durationFormatted = "{0:hh\:mm\:ss}" -f $duration
-
-Write-Host "Multi-Tenant Provisioner ended at: $($endTime.ToString('dd-MM-yyyy HH:mm:ss'))" -ForegroundColor Yellow
-Write-Host "Total runtime: $durationFormatted" -ForegroundColor Cyan
-Stop-Transcript
+if ($script:TranscriptActive) {
+    Stop-Transcript
+    $script:TranscriptActive = $false
+}
 #endregion

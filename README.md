@@ -28,15 +28,15 @@ Autopilot logic used in this tool and OSDCloud USB creation based on: https://gi
 
 ### Tenant Selector
 *test*
-<img width="719" height="564" alt="Image" src="https://github.com/user-attachments/assets/e6c20a31-bd94-4a4b-af44-2483df9e5c08" />
+<img width="719" height="564" alt="Image" src="https://github.com/user-attachments/assets/1b94467e-c879-486c-a2eb-b98818f32f51" />
 
 ## Optional prerequisites
 
 * A (multi-tenant) Entra ID enterprise application in every tenant
 
-* An Azure Key Vault
+* An Azure Key Vault: https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal
 
-* An Azure Blob Storage
+* An Azure Blob Storage: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-create?tabs=azure-portal
 
 
 ## Prerequisites
