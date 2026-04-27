@@ -14,11 +14,11 @@
 
 ## 🎯 Overview
 
-**Multi-Tenant Provisioner** is developed in response to Microsoft’s announced retirement of the Microsoft Deployment Toolkit (MDT). 
+**Multi-Tenant Provisioner** is developed in response to Microsoft’s announced retirement of the Microsoft Deployment Toolkit (MDT).
 
-It is intended for organizations that need multi-tenant bare-metal deployment capabilities and are looking for a practical MDT replacement built on OSDCloud WinPE.
+It is intended for organizations that need multi-tenant bare-metal deployment capabilities and are looking for a MDT replacement.
 
-Windows installation is fully handled by OSDCloud. **Multi-Tenant Provisioner** adds a tenant selection layer on top of OSDCloud WinPE, allowing to choose from predefined tenant-specific provisioning configurations.
+**Multi-Tenant Provisioner** adds a tenant selection layer on top of OSDCloud WinPE, allowing to choose from predefined tenant-specific provisioning configurations. The Windows installation is fully handled by OSDCloud.
 
  ### Key Capabilities
  
@@ -190,6 +190,6 @@ The Graph authentication for the hardware hash upload to Intune Autopilot works 
 
 ## 🙏 Credits
 
-OSDCloud: https://github.com/OSDeploy/OSDCloud
-
-Autopilot logic used is based on: https://github.com/blawalt/WinPEAP
+- OSDCloud: https://github.com/OSDeploy/OSDCloud
+- Autopilot uploade logic is based on: https://github.com/blawalt/WinPEAP
+- Additional troubleshooting, polishing, and a healthy amount of PowerShell brainstorming by Microsoft 365 Copilot (ChatGPT 5.4) 😉
