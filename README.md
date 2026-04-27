@@ -1,56 +1,57 @@
 # Multi-Tenant Provisioner
 
-> A PowerShell-based graphical user interface build on top of OSDCloud for selecting a provisioning profile
+> 💻 A PowerShell-based graphical user interface for selecting a provisioning profile and, if needed, uploading the device hardware hash to Intune Autopilot before Windows is installed.
 
 ## 📋 Table of Contents
 
-- [Overview](#Overview)
-- [Optional prerequisites](#Optional-prerequisites)
-- [Usage](#Prerequisites)
+- [Overview](#-overview)
+- [Configuration Choice](#️-configuration-choice)
+- [Requirements](#-requirements)
 - [Tenants Configuration](#Tenants-Configuration)
 - [OSDCloud](#osdcloud)
+- [Screenshots](#-screenshots)
+- [Credits](#-credits)
 
-## Overview
+## 🎯 Overview
 
-WinPE-compatible PowerShell tool to collect Autopilot hardware hashes, select a tenant, and register devices in Microsoft Intune with automatic profile assignment validation.
+**Multi-Tenant Provisioner** is developed in response to Microsoft’s announced retirement of the Microsoft Deployment Toolkit (MDT). 
 
-This tool is designed for MSPs and to be run in combination with OSDCloud in a WinPE environment during the deployment of a Windows device.
+It is intended for organizations that need multi-tenant bare-metal deployment capabilities and are looking for a practical MDT replacement built on OSDCloud WinPE.
 
-The Graph authentication logic is based on a multi-tenant app registration in Entra ID, allowing the same App ID and App Secret to be used across all tenants.
+Windows installation is fully handled by OSDCloud. **Multi-Tenant Provisioner** adds a tenant selection layer on top of OSDCloud WinPE, allowing to choose from predefined tenant-specific provisioning configurations.
 
-OSDCloud: https://github.com/OSDeploy/OSDCloud
+ ### Key Capabilities
+ 
+- 🏢 **Multi-Tenant Profile Selection**: Select from predefined tenant-specific provisioning profiles before deployment
+- 🔍 **Search & Filter**: Quickly find the correct tenant or profile using the built-in search functionality
+- 🖥️ **Autopilot Hardware Hash Upload**: Optionally upload the device hardware hash to Microsoft Intune Autopilot before Windows is installed
+- ✅ **Profile Validation**: Validate tenant and provisioning settings before starting deployment
+- 🌍 **Tenant-Specific Configuration**: Support tenant-specific values such as GroupTag, OS language, edition, build, activation, and optional provisioning scripts
+- ☁️ **Flexible Configuration Sources**: Use either hardcoded parameters or centrally hosted configuration files in managed Cloud storage
+- 🔐 **Multi-Tenant Graph Authentication**: Authenticate to multiple customer tenants using a multi-tenant Entra ID app registration
+- 🧩 **Optional Custom Provisioning Logic**: Support optional tenant-specific provisioning scripts during deployment
+- 🪟 **WinPE & OSDCloud Integration**: Designed to run in WinPE and work alongside OSDCloud for bare-metal deployment
+- 📋 **Deployment Summary**: Show a clear overview of the selected provisioning settings before handing off to OSDCloud for Windows installation
 
-Multi tenant app: https://learningbytesblog.com/posts/Muiltitenant-Entra-APP-for-multitenant-managment/
+## ❓ Configuration Choice
 
-Autopilot logic used in this tool and OSDCloud USB creation based on: https://github.com/blawalt/WinPEAP
-
-## Screenhots
-
-### Tenant Selector
-
-<img width="719" height="564" alt="Image" src="https://github.com/user-attachments/assets/1b94467e-c879-486c-a2eb-b98818f32f51" />
-
-## Choices
-
-## Configuration Choice
-
-Before using this solution, decide how you want to store the configuration and authentication details.
+Before using **Mutli-Tenant Provisioner**, decide how you want to store the configuration and authentication details.
 
 You can choose between:
 
-### Option 1 — Hardcoded parameters in `Start-MTP.ps1`
+### Option 1 - Hardcoded in `Start-MTP.ps1`
 
-All tenant settings, URLs, and authentication details are stored directly inside the script.
+All tenant settings and authentication details are stored directly inside the script.
 
 This is suitable when:
 
 - the script is only used internally
-- deployment is started from a **centralized Windows deployment server**
+- deployment is started from a **centralized Windows Deployment Server**
 - there is no need to restrict usage outside your own environment
 
-### Option 2 — Hosted externally
+### Option 2 - Hosted in managed Cloud storage
 
-Configuration files are stored externally, for example in an Azure blob storage:
+Configuration files are stored a managed Cloud storage, for example in an Azure blob storage:
 
 - `TenantsConfig.json`
 - optional provisioning scripts such as `SetupComplete.ps1`
@@ -67,7 +68,7 @@ This is recommended when:
 
 ## Why host the files in Azure Blob Storage and use Azure Key Vault?
 
-A major benefit of hosting the configuration externally is that access can be restricted to a **specific public IP address**.
+A major benefit of hosting the configuration files in a managed cloud storage is that access can be restricted to a **specific public IP address**.
 
 This means provisioning only works from an approved network location.
 
@@ -87,42 +88,17 @@ This creates an additional **safety net**.
 
 ## Practical Recommendation
 
-- If you use **Bootable USB sticks** for deployment, hosting the configuration in **Azure Blob Storage** and secrets in **Azure Key Vault** is the safer choice.
-- If you use a **centralized Windows deployment server** in a controlled environment, you may choose to use **hardcoded parameters** in `Start-MTP.ps1` for simplicity.
+- If you plan to use **Bootable USB sticks** for deployment, hosting the configuration in **Azure Blob Storage** and secrets in **Azure Key Vault** is the safer choice.
+- If you only plan to use a **centralized Windows deployment server** in a controlled environment, you may choose to use **hardcoded parameters** in `Start-MTP.ps1` for simplicity.
 
+## 📋 Requirements
 
+### Required for both options
 
-## Optional prerequisites
+* **Multi-tenant Entra ID Enterprise Application**
+The Graph authentication for the hardware hash upload to Intune Autopilot works with a multi-tenant app registration in Entra ID, allowing the same App ID and App Secret to be used across all tenants.
 
-
-* A (multi-tenant) Entra ID enterprise application in every tenant
-
-* An Azure Key Vault: https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal
-
-* An Azure Blob Storage: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-create?tabs=azure-portal
-
-
-## Prerequisites
-
-* **Building the Tenants configuration:** Inside the *Start-MTP.ps1* or with *Export-TentansConfig.ps1*
-    * Edit Start-MTP.ps1 and go to: *#region: Hardcoded Tenant Parameters* and fill in the parameters of every tenant you want to provision.
-
-    If you only want to provision an OS you can set *UploadToAutopilot* to **$false** and change *Name* to for example **Windows 11 Pro**
-
-    ```powershell
-        Name = "Tenant 1"
-        TenantId = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-        UploadToAutopilot = $true
-        GroupTag = "TENANT1"
-        OSBuild = "25H2"
-        OSEdition = "Pro"
-        OSVersion = "Windows 11"
-        OSLanguage = "nl-nl"
-        OSActivation = "Volume"
-    ```
-    ### test
-    
-    
+* **Partner Center PowerShell module**
     ```powershell
     Install-Module PartnerCenter
     ```
@@ -133,9 +109,40 @@ This creates an additional **safety net**.
     ```
 * **Windows Assessment and Deployment Kit (ADK) and WinPE Add-on:** Install the Windows 10 ADK and the WinPE add-on. These provide deployment tools, including WinPE itself and the `oa3tool.exe` needed later.
     * Download link: [Windows ADK Download](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install)
-    * Ensure installation of **ADK** and the **WinPE Add-on** 
+    * Ensure installation of **ADK** and the **WinPE Add-on**
+    
 
-## Tenants Configuration
+### Option 1 - Hardcoded parameters
+
+* **Building the Tenants configuration:** Inside the *Start-MTP.ps1* or with *Export-TentansConfig.ps1*
+    * Edit Start-MTP.ps1 and go to: *#region: Hardcoded Tenant Parameters* and fill in the parameters of every tenant you want to provision.
+
+    If you only want to provision an OS you can set *UploadToAutopilot* to **$false** and change *Name* to for example **Windows 11 Pro**
+
+    ```powershell
+    [PSCustomObject]@{
+        Name = "Tenant C"
+        TenantId = "21212121-2121-2121-2121-212121212121"
+        UploadToAutopilot = $true
+        GroupTag = "TAG2"
+        OSBuild = "25H2"
+        OSEdition = "Pro"
+        OSVersion = "Windows 11"
+        OSLanguage = "en-us"
+        OSActivation = "Volume"
+        Pinned = $true # This tenant will be pinned to the top of the list in the UI
+        SetupCompleteUrl = "" # Optionally add a tenant-specific SetupComplete.ps1 URL.
+    }
+    ```
+
+### Option 2 - Hosted in managed Cloud storage
+
+
+* A (multi-tenant) Entra ID enterprise application in every tenant
+
+* An Azure Key Vault: https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal
+
+* An Azure Blob Storage: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-create?tabs=azure-portal
 
 ## OSDCloud
 
@@ -162,14 +169,27 @@ This creates an additional **safety net**.
 ## Test in Hyper-V
 
 ## Create bootable USB
-*Create a bootable USB
-     ```powershell
+* Create a bootable USB
+    ```powershell
     New-OSDCloudUSB
     ```
 
- *If you make changes to WinPE in your OSDCloud Workspace, you can easily update your OSDCloud USB WinPE volume by using Update-OSDCloudUSB
+ * If you make changes to WinPE in your OSDCloud Workspace, you can easily update your OSDCloud USB WinPE volume by using Update-OSDCloudUSB
      ```powershell
     Update-OSDCloudUSB
     ```
 
 ## Use with WDS PXE
+
+
+## 📸 Screenshots
+
+### Tenant Selector
+
+<img width="719" height="564" alt="Image" src="https://github.com/user-attachments/assets/1b94467e-c879-486c-a2eb-b98818f32f51" />
+
+## 🙏 Credits
+
+OSDCloud: https://github.com/OSDeploy/OSDCloud
+
+Autopilot logic used is based on: https://github.com/blawalt/WinPEAP
