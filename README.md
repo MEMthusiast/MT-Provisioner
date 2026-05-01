@@ -30,7 +30,7 @@ It is intended for organizations that need multi-tenant bare-metal deployment ca
 - ☁️ **Flexible Configuration Sources**: Use either hardcoded parameters or centrally hosted configuration files in managed Cloud storage
 - 🔐 **Multi-Tenant Graph Authentication**: Authenticate to multiple customer tenants using a multi-tenant Entra ID app registration
 - 🧩 **Optional Custom Provisioning Logic**: Support optional tenant-specific provisioning scripts during deployment
-- 🪟 **WinPE & OSDCloud Integration**: Designed to run in WinPE and work alongside OSDCloud for bare-metal deployment
+- 🪟 **OSDCloud Integration**: Designed to run in OSDCloud WinPE and work alongside OSDCloud for Windows Installation
 - 📋 **Deployment Summary**: Show a clear overview of the selected provisioning settings before handing off to OSDCloud for Windows installation
 
 ## ❓ Configuration Choice

@@ -1430,7 +1430,7 @@ $StartOSDCloudParams = @{
             $script:TranscriptActive = $false
         }
         
-        Update-Module -Name OSD -ErrorAction Ignore
+        Update-Module -Name OSD -Force -ErrorAction Ignore
         Start-OSDCloud @StartOSDCloudParams -ErrorAction Stop
 
     }
